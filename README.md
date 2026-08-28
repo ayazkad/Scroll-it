@@ -15,7 +15,9 @@
       <img src="https://img.shields.io/badge/Downloads-Portable%20%26%20Setup-00f2fe?style=for-the-badge&logo=windows" alt="Downloads" />
     </a>
     <img src="https://img.shields.io/badge/Windows-7%20%7C%208%20%7C%2010%20%7C%2011-0080ff?style=for-the-badge&logo=windows&logoColor=white" alt="Windows Support" />
-    <img src="https://img.shields.io/badge/License-MIT-00c853?style=for-the-badge" alt="License" />
+    <a href="LICENSE">
+      <img src="https://img.shields.io/badge/License-GPL--3.0-00c853?style=for-the-badge" alt="License GPL-3.0" />
+    </a>
   </p>
 
   <br/>
