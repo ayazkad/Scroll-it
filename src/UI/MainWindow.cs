@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -26,12 +27,23 @@ namespace ScrollIt.UI
         // Sliders & Text Blocks
         private Slider _stepSlider;
         private TextBlock _stepValText;
+        private TextBlock _lblStepTitle;
+        private TextBlock _lblStepDesc;
+
         private Slider _timeSlider;
         private TextBlock _timeValText;
+        private TextBlock _lblTimeTitle;
+        private TextBlock _lblTimeDesc;
+
         private Slider _accelSlider;
         private TextBlock _accelValText;
+        private TextBlock _lblAccelTitle;
+        private TextBlock _lblAccelDesc;
+
         private Slider _tailSlider;
         private TextBlock _tailValText;
+        private TextBlock _lblTailTitle;
+        private TextBlock _lblTailDesc;
 
         // Toggle Switch & Status
         private Border _toggleTrack;
@@ -41,10 +53,14 @@ namespace ScrollIt.UI
         private TextBlock _statusText;
         private Button _toggleEnableBtn;
 
-        // Presets
+        // Presets & Donate
+        private TextBlock _presetsTitle;
         private StackPanel _presetsContainer;
         private TextBlock _presetDescText;
         private Dictionary<string, Button> _presetButtons = new Dictionary<string, Button>();
+        private TextBlock _btnDonateText;
+        private TextBlock _btnDonateTextOpt;
+        private Button _btnDonate;
 
         // Navigation & Tab Sliding
         private Grid _tabContentContainer;
@@ -56,6 +72,9 @@ namespace ScrollIt.UI
         private Button _btnTabPhysics;
         private Button _btnTabApps;
         private Button _btnTabOptions;
+        private TextBlock _txtTabPhysics;
+        private TextBlock _txtTabApps;
+        private TextBlock _txtTabOptions;
         private StackPanel _tabStack;
         private Border _tabIndicator;
         private TranslateTransform _tabIndicatorTransform;
@@ -63,14 +82,24 @@ namespace ScrollIt.UI
         private double _currentIndicatorW = 0;
 
         // Apps tab
+        private TextBlock _appsInfoTitle;
+        private TextBlock _appsInfoDesc;
+        private TextBlock _appsAddTitle;
+        private Button _appsAddBtn;
+        private Button _appsQuickAddBtn;
         private StackPanel _blacklistedListPanel;
         private TextBox _newAppTextBox;
         private ComboBox _runningAppsCombo;
 
         // Options tab
+        private TextBlock _optTitle;
+        private TextBlock _optLangTitle;
+        private ToggleButton _btnLanguageDropdown;
+        private Popup _langPopup;
         private CheckBox _chkAutoStart;
         private CheckBox _chkCtrlZoom;
         private CheckBox _chkMinimizeToTray;
+        private Button _btnResetDefaults;
 
         // Container & Window Controls
         private Border _mainContainer;
@@ -78,6 +107,7 @@ namespace ScrollIt.UI
         private ContentControl _maxBtnContent;
 
         private bool _isUpdatingUI = false;
+        private bool _isStatusAnimating = false;
 
         public MainWindow()
         {
@@ -86,6 +116,7 @@ namespace ScrollIt.UI
             LoadSettingsToUI();
 
             SettingsManager.SettingsChanged += OnSettingsUpdated;
+            I18n.LanguageChanged += OnLanguageUpdated;
         }
 
         private void InitializeWindow()
@@ -101,7 +132,6 @@ namespace ScrollIt.UI
             Background = Brushes.Transparent;
             ResizeMode = ResizeMode.CanResize;
 
-            // Optimisation du rendu visuel et netteté du texte (ClearType + Snapping)
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             TextOptions.SetTextRenderingMode(this, TextRenderingMode.ClearType);
             TextOptions.SetTextHintingMode(this, TextHintingMode.Fixed);
@@ -125,6 +155,25 @@ namespace ScrollIt.UI
                 IntPtr handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
                 System.Windows.Interop.HwndSource.FromHwnd(handle).AddHook(WindowProc);
                 Win32.EnableWindows11RoundedCorners(handle);
+            };
+
+            PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (_btnLanguageDropdown != null && _btnLanguageDropdown.IsChecked == true)
+                {
+                    if (!_btnLanguageDropdown.IsMouseOver)
+                    {
+                        _btnLanguageDropdown.IsChecked = false;
+                    }
+                }
+            };
+
+            Deactivated += (s, e) =>
+            {
+                if (_btnLanguageDropdown != null)
+                {
+                    _btnLanguageDropdown.IsChecked = false;
+                }
             };
 
             StateChanged += (s, e) =>
@@ -155,7 +204,6 @@ namespace ScrollIt.UI
                 }
             };
 
-            // Handle close to minimize to tray
             Closing += (s, e) =>
             {
                 if (SettingsManager.Current.MinimizeToTrayOnClose)
@@ -173,7 +221,7 @@ namespace ScrollIt.UI
                 WmGetMinMaxInfo(hwnd, lParam);
                 handled = true;
             }
-            else if (msg == 0x0084 && WindowState != WindowState.Maximized) // WM_NCHITTEST (Snappy edge & corner resizing)
+            else if (msg == 0x0084 && WindowState != WindowState.Maximized) // WM_NCHITTEST
             {
                 int x = unchecked((short)(long)lParam);
                 int y = unchecked((short)((long)lParam >> 16));
@@ -185,14 +233,14 @@ namespace ScrollIt.UI
                 bool isTop = pt.Y <= resizeBorder;
                 bool isBottom = pt.Y >= ActualHeight - resizeBorder;
 
-                if (isTop && isLeft) { handled = true; return (IntPtr)13; /* HTTOPLEFT */ }
-                if (isTop && isRight) { handled = true; return (IntPtr)14; /* HTTOPRIGHT */ }
-                if (isBottom && isLeft) { handled = true; return (IntPtr)16; /* HTBOTTOMLEFT */ }
-                if (isBottom && isRight) { handled = true; return (IntPtr)17; /* HTBOTTOMRIGHT */ }
-                if (isLeft) { handled = true; return (IntPtr)10; /* HTLEFT */ }
-                if (isRight) { handled = true; return (IntPtr)11; /* HTRIGHT */ }
-                if (isTop) { handled = true; return (IntPtr)12; /* HTTOP */ }
-                if (isBottom) { handled = true; return (IntPtr)15; /* HTBOTTOM */ }
+                if (isTop && isLeft) { handled = true; return (IntPtr)13; }
+                if (isTop && isRight) { handled = true; return (IntPtr)14; }
+                if (isBottom && isLeft) { handled = true; return (IntPtr)16; }
+                if (isBottom && isRight) { handled = true; return (IntPtr)17; }
+                if (isLeft) { handled = true; return (IntPtr)10; }
+                if (isRight) { handled = true; return (IntPtr)11; }
+                if (isTop) { handled = true; return (IntPtr)12; }
+                if (isBottom) { handled = true; return (IntPtr)15; }
             }
             else if (msg == Win32.WM_SHOW_SCROLL_IT && Win32.WM_SHOW_SCROLL_IT != 0)
             {
@@ -214,11 +262,10 @@ namespace ScrollIt.UI
         {
             Win32.MINMAXINFO mmi = (Win32.MINMAXINFO)System.Runtime.InteropServices.Marshal.PtrToStructure(lParam, typeof(Win32.MINMAXINFO));
             
-            // Hard minimum sizing limit at OS level so content never breaks or truncates
             mmi.ptMinTrackSize.x = (int)MinWidth;
             mmi.ptMinTrackSize.y = (int)MinHeight;
 
-            IntPtr monitor = Win32.MonitorFromWindow(hwnd, 2 /* MONITOR_DEFAULTTONEAREST */);
+            IntPtr monitor = Win32.MonitorFromWindow(hwnd, 2);
             if (monitor != IntPtr.Zero)
             {
                 Win32.MONITORINFO monitorInfo = new Win32.MONITORINFO();
@@ -236,7 +283,6 @@ namespace ScrollIt.UI
 
         private void BuildUI()
         {
-            // Outer container (clean, sleek, hardware-accelerated dark frame)
             _mainContainer = new Border
             {
                 Background = Styles.BgBrush,
@@ -246,9 +292,9 @@ namespace ScrollIt.UI
             };
 
             Grid rootGrid = new Grid();
-            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(64) }); // TitleBar
-            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(50) }); // Sub Header / Tabs
-            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // Content
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(64) });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(50) });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             // 1. TitleBar & Header
             rootGrid.Children.Add(BuildTitleBar());
@@ -319,7 +365,6 @@ namespace ScrollIt.UI
                 Margin = new Thickness(20, 0, 0, 0)
             };
 
-            // Real Glowing Project Logo
             Border iconBadge = new Border
             {
                 Margin = new Thickness(0, 0, 12, 0),
@@ -355,17 +400,14 @@ namespace ScrollIt.UI
                 Margin = new Thickness(0, 0, 16, 0)
             };
 
-            // Minimize Button (Clean Vector Line)
             Button minBtn = CreateVectorWinButton(CreateMinimizeVectorIcon(), () => { WindowState = WindowState.Minimized; });
 
-            // Maximize / Fullscreen Button (Clean Vector Box / Double-Box)
             _maxBtnContent = new ContentControl { Content = CreateMaximizeVectorIcon() };
             Button maxBtn = CreateVectorWinButton(_maxBtnContent, () =>
             {
                 WindowState = (WindowState == WindowState.Maximized) ? WindowState.Normal : WindowState.Maximized;
             });
 
-            // Close Button (Clean Vector Cross)
             Button closeBtn = CreateVectorWinButton(CreateCloseVectorIcon(), () => { Close(); }, true);
 
             rightPanel.Children.Add(minBtn);
@@ -477,7 +519,7 @@ namespace ScrollIt.UI
             btn.Content = icon;
 
             SolidColorBrush normalHoverBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
-            SolidColorBrush dangerHoverBrush = new SolidColorBrush(Color.FromRgb(232, 17, 35)); // Sleek Windows Red
+            SolidColorBrush dangerHoverBrush = new SolidColorBrush(Color.FromRgb(232, 17, 35));
             SolidColorBrush dangerPressedBrush = new SolidColorBrush(Color.FromRgb(196, 43, 28));
 
             System.Windows.Shapes.Path closePath = icon as System.Windows.Shapes.Path;
@@ -548,9 +590,9 @@ namespace ScrollIt.UI
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            _btnTabPhysics = CreateNavTab("Physique & Presets", Styles.CreateProjectLogo(18), true, () => SwitchTab(0));
-            _btnTabApps = CreateNavTab("Applications & Exclusions", CreateTabEmoji("🎮"), false, () => SwitchTab(1));
-            _btnTabOptions = CreateNavTab("Options & Démarrage", CreateTabEmoji("⚙"), false, () => SwitchTab(2));
+            _btnTabPhysics = CreateNavTab(I18n.T("Tab_Physics"), Styles.CreateProjectLogo(18), true, () => SwitchTab(0), out _txtTabPhysics);
+            _btnTabApps = CreateNavTab(I18n.T("Tab_Apps"), CreateTabEmoji("🎮"), false, () => SwitchTab(1), out _txtTabApps);
+            _btnTabOptions = CreateNavTab(I18n.T("Tab_Options"), CreateTabEmoji("⚙"), false, () => SwitchTab(2), out _txtTabOptions);
 
             _tabStack.Children.Add(_btnTabPhysics);
             _tabStack.Children.Add(_btnTabApps);
@@ -577,10 +619,10 @@ namespace ScrollIt.UI
             tabContainer.Children.Add(_tabStack);
             tabContainer.Children.Add(_tabIndicator);
 
-            // Toggle active switch button (placed on the right of the Tab Bar)
+            // Toggle active switch button
             _toggleEnableBtn = new Button
             {
-                Width = 106,
+                Width = 138,
                 Height = 32,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -591,7 +633,7 @@ namespace ScrollIt.UI
             toggleBorder.SetValue(Border.BorderBrushProperty, Styles.CardBorderBrush);
             toggleBorder.SetValue(Border.BorderThicknessProperty, new Thickness(1));
             toggleBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(16));
-            toggleBorder.SetValue(Border.PaddingProperty, new Thickness(8, 4, 10, 4));
+            toggleBorder.SetValue(Border.PaddingProperty, new Thickness(8, 4, 12, 4));
 
             FrameworkElementFactory toggleContent = new FrameworkElementFactory(typeof(ContentPresenter));
             toggleContent.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
@@ -605,8 +647,8 @@ namespace ScrollIt.UI
             _toggleEnableBtn.Click += (s, e) =>
             {
                 SettingsManager.Current.Enabled = !SettingsManager.Current.Enabled;
-                SettingsManager.Save();
                 UpdateStatusUI(true);
+                SettingsManager.Save();
                 TrayManager.UpdateState();
             };
 
@@ -619,41 +661,44 @@ namespace ScrollIt.UI
             statusGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             
             bool isInitEnabled = SettingsManager.Current.Enabled;
-            _toggleTrackBrush = new SolidColorBrush(isInitEnabled ? Styles.SuccessGreen : Color.FromRgb(48, 54, 61));
+            _toggleTrackBrush = new SolidColorBrush(isInitEnabled ? Color.FromRgb(46, 204, 113) : Color.FromRgb(48, 54, 61));
             _toggleTrack = new Border
             {
-                Width = 34,
-                Height = 18,
-                CornerRadius = new CornerRadius(9),
+                Width = 38,
+                Height = 20,
+                CornerRadius = new CornerRadius(10),
                 Background = _toggleTrackBrush,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                BorderBrush = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(0, 0, 8, 0)
             };
-            _toggleThumbTransform = new TranslateTransform(isInitEnabled ? 16 : 0, 0);
+            _toggleThumbTransform = new TranslateTransform(isInitEnabled ? 18 : 0, 0);
             _toggleThumb = new Border
             {
-                Width = 12,
-                Height = 12,
-                CornerRadius = new CornerRadius(6),
+                Width = 14,
+                Height = 14,
+                CornerRadius = new CornerRadius(7),
                 Background = Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(3, 0, 0, 0),
+                Margin = new Thickness(2, 0, 0, 0),
                 RenderTransform = _toggleThumbTransform,
                 VerticalAlignment = VerticalAlignment.Center,
                 Effect = new DropShadowEffect
                 {
                     Color = Colors.Black,
                     Direction = 270,
-                    ShadowDepth = 1,
+                    ShadowDepth = 1.5,
                     BlurRadius = 4,
-                    Opacity = 0.45
+                    Opacity = 0.5
                 }
             };
             _toggleTrack.Child = _toggleThumb;
 
             _statusText = new TextBlock
             {
-                Text = isInitEnabled ? "Actif" : "Inactif",
+                Text = isInitEnabled ? I18n.T("Status_Active") : I18n.T("Status_Inactive"),
                 Foreground = isInitEnabled ? Styles.TextWhiteBrush : Styles.TextMutedBrush,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
@@ -688,7 +733,7 @@ namespace ScrollIt.UI
             return tabBorder;
         }
 
-        private Button CreateNavTab(string title, UIElement icon, bool active, Action onClick)
+        private Button CreateNavTab(string title, UIElement icon, bool active, Action onClick, out TextBlock outText)
         {
             StackPanel contentStack = new StackPanel
             {
@@ -714,6 +759,7 @@ namespace ScrollIt.UI
                 VerticalAlignment = VerticalAlignment.Center
             };
             contentStack.Children.Add(text);
+            outText = text;
 
             Button btn = new Button
             {
@@ -861,7 +907,6 @@ namespace ScrollIt.UI
 
             FrameworkElement[] allViews = new FrameworkElement[] { _tabPhysicsView, _tabAppsView, _tabOptionsView };
 
-            // 1. Immediately cancel all running animations on inactive views and hide them
             foreach (FrameworkElement v in allViews)
             {
                 if (v != null && v != newView)
@@ -878,7 +923,6 @@ namespace ScrollIt.UI
                 }
             }
 
-            // 2. Setup incoming view
             if (!_tabContentContainer.Children.Contains(newView))
             {
                 _tabContentContainer.Children.Add(newView);
@@ -891,7 +935,6 @@ namespace ScrollIt.UI
                 newView.RenderTransform = newTrans;
             }
 
-            // Clear any lingering animation on the incoming view
             newView.BeginAnimation(UIElement.OpacityProperty, null);
             newTrans.BeginAnimation(TranslateTransform.XProperty, null);
 
@@ -932,15 +975,15 @@ namespace ScrollIt.UI
             StackPanel stack = new StackPanel { Margin = new Thickness(4) };
 
             // Presets Bar
-            TextBlock presetsTitle = new TextBlock
+            _presetsTitle = new TextBlock
             {
-                Text = "Profils de fluidité (1-Clic)",
+                Text = I18n.T("Physics_PresetsTitle"),
                 Foreground = Styles.TextWhiteBrush,
                 FontWeight = FontWeights.Bold,
                 FontSize = 14,
                 Margin = new Thickness(4, 0, 0, 8)
             };
-            stack.Children.Add(presetsTitle);
+            stack.Children.Add(_presetsTitle);
 
             _presetsContainer = new StackPanel
             {
@@ -963,9 +1006,7 @@ namespace ScrollIt.UI
 
             _presetDescText = new TextBlock
             {
-                Text = SettingsManager.Presets.ContainsKey(SettingsManager.Current.ActivePreset)
-                    ? SettingsManager.Presets[SettingsManager.Current.ActivePreset].Description
-                    : "Paramètres personnalisés ajustés manuellement.",
+                Text = I18n.GetPresetDescription(SettingsManager.Current.ActivePreset),
                 Foreground = Styles.TextMutedBrush,
                 FontSize = 12,
                 Margin = new Thickness(6, 0, 0, 12),
@@ -979,10 +1020,11 @@ namespace ScrollIt.UI
 
             // 1. Step Size
             slidersStack.Children.Add(CreateSliderRow(
-                "Taille du pas (Step Size)",
-                "Distance parcourue pour un cran de molette (défaut Windows : 120 px)",
+                I18n.T("Slider_StepSize_Title"),
+                I18n.T("Slider_StepSize_Desc"),
                 20, 300, 1,
                 out _stepSlider, out _stepValText,
+                out _lblStepTitle, out _lblStepDesc,
                 (val) =>
                 {
                     if (_isUpdatingUI) return;
@@ -995,10 +1037,11 @@ namespace ScrollIt.UI
 
             // 2. Animation Time
             slidersStack.Children.Add(CreateSliderRow(
-                "Durée d'animation (Animation Time)",
-                "Temps d'amortissement de la transition fluide",
+                I18n.T("Slider_AnimTime_Title"),
+                I18n.T("Slider_AnimTime_Desc"),
                 100, 900, 10,
                 out _timeSlider, out _timeValText,
+                out _lblTimeTitle, out _lblTimeDesc,
                 (val) =>
                 {
                     if (_isUpdatingUI) return;
@@ -1011,10 +1054,11 @@ namespace ScrollIt.UI
 
             // 3. Acceleration Multiplier
             slidersStack.Children.Add(CreateSliderRow(
-                "Multiplicateur d'accélération (Inertia)",
-                "Vitesse exponentielle lors de coups de molette rapides consécutifs",
+                I18n.T("Slider_Accel_Title"),
+                I18n.T("Slider_Accel_Desc"),
                 1.0, 4.5, 0.1,
                 out _accelSlider, out _accelValText,
+                out _lblAccelTitle, out _lblAccelDesc,
                 (val) =>
                 {
                     if (_isUpdatingUI) return;
@@ -1027,10 +1071,11 @@ namespace ScrollIt.UI
 
             // 4. Deceleration Tail (Friction)
             slidersStack.Children.Add(CreateSliderRow(
-                "Queue de décélération (Tail / Friction)",
-                "Douceur de la glisse finale avant l'arrêt complet",
+                I18n.T("Slider_Tail_Title"),
+                I18n.T("Slider_Tail_Desc"),
                 0.20, 0.95, 0.01,
                 out _tailSlider, out _tailValText,
+                out _lblTailTitle, out _lblTailDesc,
                 (val) =>
                 {
                     if (_isUpdatingUI) return;
@@ -1044,6 +1089,10 @@ namespace ScrollIt.UI
             slidersCard.Child = slidersStack;
             stack.Children.Add(slidersCard);
 
+            // Donate Pill Button
+            _btnDonate = CreateDonatePillButton(out _btnDonateText);
+            stack.Children.Add(_btnDonate);
+
             scroll.Content = stack;
             return scroll;
         }
@@ -1052,6 +1101,7 @@ namespace ScrollIt.UI
             string title, string description,
             double min, double max, double tick,
             out Slider outSlider, out TextBlock outValText,
+            out TextBlock outTitleBlock, out TextBlock outDescBlock,
             Action<double> onChange, string unit = "")
         {
             StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
@@ -1101,7 +1151,6 @@ namespace ScrollIt.UI
 
             panel.Children.Add(titleGrid);
 
-            // Slider with [-] and [+] Stepper Buttons for precision adjustment
             Grid sliderGrid = new Grid { Margin = new Thickness(0, 5, 0, 0) };
             sliderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             sliderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1115,7 +1164,8 @@ namespace ScrollIt.UI
                 IsSnapToTickEnabled = true,
                 Margin = new Thickness(10, 0, 10, 0),
                 VerticalAlignment = VerticalAlignment.Center,
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                Template = Styles.CreateCustomSliderTemplate()
             };
             slider.ValueChanged += (s, e) =>
             {
@@ -1123,14 +1173,14 @@ namespace ScrollIt.UI
                 onChange(slider.Value);
             };
 
-            Button btnMinus = CreateStepperButton("−", () =>
+            Button btnMinus = CreateStepperButton(false, () =>
             {
                 double newVal = Math.Round(slider.Value - tick, 2);
                 if (newVal < min) newVal = min;
                 slider.Value = newVal;
             });
 
-            Button btnPlus = CreateStepperButton("+", () =>
+            Button btnPlus = CreateStepperButton(true, () =>
             {
                 double newVal = Math.Round(slider.Value + tick, 2);
                 if (newVal > max) newVal = max;
@@ -1150,10 +1200,12 @@ namespace ScrollIt.UI
 
             outSlider = slider;
             outValText = valText;
+            outTitleBlock = tBlock;
+            outDescBlock = dBlock;
             return panel;
         }
 
-        private Button CreateStepperButton(string symbol, Action onClick)
+        private Button CreateStepperButton(bool isPlus, Action onClick)
         {
             Button btn = new Button
             {
@@ -1166,27 +1218,73 @@ namespace ScrollIt.UI
             ControlTemplate tpl = new ControlTemplate(typeof(Button));
             FrameworkElementFactory border = new FrameworkElementFactory(typeof(Border));
             border.Name = "Border";
-            border.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(200, 22, 27, 34)));
-            border.SetValue(Border.BorderBrushProperty, Styles.CardBorderBrush);
-            border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            border.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(22, 28, 38)));
+            border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromArgb(120, 0, 210, 255)));
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(1.2));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(14));
+            border.SetValue(Border.EffectProperty, new DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 4,
+                ShadowDepth = 1,
+                Opacity = 0.35
+            });
 
-            FrameworkElementFactory text = new FrameworkElementFactory(typeof(TextBlock));
-            text.SetValue(TextBlock.TextProperty, symbol);
-            text.SetValue(TextBlock.ForegroundProperty, Styles.TextWhiteBrush);
-            text.SetValue(TextBlock.FontSizeProperty, 14.0);
-            text.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
-            text.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-            text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
-            border.AppendChild(text);
+            FrameworkElementFactory iconCanvas = new FrameworkElementFactory(typeof(Canvas));
+            iconCanvas.SetValue(Canvas.WidthProperty, 10.0);
+            iconCanvas.SetValue(Canvas.HeightProperty, 10.0);
+            iconCanvas.SetValue(Canvas.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            iconCanvas.SetValue(Canvas.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            FrameworkElementFactory hLine = new FrameworkElementFactory(typeof(Line));
+            hLine.Name = "LineH";
+            hLine.SetValue(Line.X1Property, 0.0);
+            hLine.SetValue(Line.Y1Property, 5.0);
+            hLine.SetValue(Line.X2Property, 10.0);
+            hLine.SetValue(Line.Y2Property, 5.0);
+            hLine.SetValue(Line.StrokeProperty, Styles.AccentBrush);
+            hLine.SetValue(Line.StrokeThicknessProperty, 2.0);
+            hLine.SetValue(Line.StrokeStartLineCapProperty, PenLineCap.Round);
+            hLine.SetValue(Line.StrokeEndLineCapProperty, PenLineCap.Round);
+            iconCanvas.AppendChild(hLine);
+
+            if (isPlus)
+            {
+                FrameworkElementFactory vLine = new FrameworkElementFactory(typeof(Line));
+                vLine.Name = "LineV";
+                vLine.SetValue(Line.X1Property, 5.0);
+                vLine.SetValue(Line.Y1Property, 0.0);
+                vLine.SetValue(Line.X2Property, 5.0);
+                vLine.SetValue(Line.Y2Property, 10.0);
+                vLine.SetValue(Line.StrokeProperty, Styles.AccentBrush);
+                vLine.SetValue(Line.StrokeThicknessProperty, 2.0);
+                vLine.SetValue(Line.StrokeStartLineCapProperty, PenLineCap.Round);
+                vLine.SetValue(Line.StrokeEndLineCapProperty, PenLineCap.Round);
+                iconCanvas.AppendChild(vLine);
+            }
+
+            border.AppendChild(iconCanvas);
 
             Trigger mouseOverTrigger = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
-            mouseOverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(255, 35, 43, 56)), "Border"));
+            mouseOverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(70, 0, 210, 255)), "Border"));
             mouseOverTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "Border"));
+            mouseOverTrigger.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect
+            {
+                Color = Color.FromRgb(0, 210, 255),
+                BlurRadius = 10,
+                ShadowDepth = 0,
+                Opacity = 0.7
+            }, "Border"));
+            mouseOverTrigger.Setters.Add(new Setter(Line.StrokeProperty, Brushes.White, "LineH"));
+            if (isPlus)
+            {
+                mouseOverTrigger.Setters.Add(new Setter(Line.StrokeProperty, Brushes.White, "LineV"));
+            }
             tpl.Triggers.Add(mouseOverTrigger);
 
             Trigger pressedTrigger = new Trigger { Property = Button.IsPressedProperty, Value = true };
-            pressedTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(255, 20, 25, 32)), "Border"));
+            pressedTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(140, 0, 180, 230)), "Border"));
+            pressedTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "Border"));
             tpl.Triggers.Add(pressedTrigger);
 
             tpl.VisualTree = border;
@@ -1202,23 +1300,23 @@ namespace ScrollIt.UI
 
             Border infoCard = Styles.CreateGlassCard(16, 12);
             StackPanel infoStack = new StackPanel();
-            TextBlock infoTitle = new TextBlock
+            _appsInfoTitle = new TextBlock
             {
-                Text = "Exceptions & Liste Noire d'Applications",
+                Text = I18n.T("Apps_CardTitle"),
                 Foreground = Styles.TextWhiteBrush,
                 FontWeight = FontWeights.Bold,
                 FontSize = 15
             };
-            TextBlock infoDesc = new TextBlock
+            _appsInfoDesc = new TextBlock
             {
-                Text = "Scroll-It se désactive automatiquement sur les exécutables ci-dessous (idéal pour les jeux compétitifs, logiciels de modélisation 3D / CAD ou applications sensibles).",
+                Text = I18n.T("Apps_CardDesc"),
                 Foreground = Styles.TextMutedBrush,
                 FontSize = 12,
                 Margin = new Thickness(0, 4, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             };
-            infoStack.Children.Add(infoTitle);
-            infoStack.Children.Add(infoDesc);
+            infoStack.Children.Add(_appsInfoTitle);
+            infoStack.Children.Add(_appsInfoDesc);
             infoCard.Child = infoStack;
             stack.Children.Add(infoCard);
 
@@ -1227,15 +1325,15 @@ namespace ScrollIt.UI
             addCard.Margin = new Thickness(0, 16, 0, 16);
             StackPanel addStack = new StackPanel();
 
-            TextBlock addTitle = new TextBlock
+            _appsAddTitle = new TextBlock
             {
-                Text = "Ajouter une application",
+                Text = I18n.T("Apps_AddTitle"),
                 Foreground = Styles.TextWhiteBrush,
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 Margin = new Thickness(0, 0, 0, 8)
             };
-            addStack.Children.Add(addTitle);
+            addStack.Children.Add(_appsAddTitle);
 
             Grid addGrid = new Grid();
             addGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1255,8 +1353,8 @@ namespace ScrollIt.UI
             addGrid.Children.Add(_newAppTextBox);
             Grid.SetColumn(_newAppTextBox, 0);
 
-            Button addBtn = Styles.CreatePillButton("+ Ajouter", true);
-            addBtn.Click += (s, e) =>
+            _appsAddBtn = Styles.CreatePillButton(I18n.T("Apps_AddBtn"), true);
+            _appsAddBtn.Click += (s, e) =>
             {
                 string app = _newAppTextBox.Text.Trim().ToLowerInvariant().Replace(".exe", "");
                 if (!string.IsNullOrEmpty(app) && !SettingsManager.Current.BlacklistedApps.Contains(app))
@@ -1267,8 +1365,8 @@ namespace ScrollIt.UI
                     RefreshAppsList();
                 }
             };
-            addGrid.Children.Add(addBtn);
-            Grid.SetColumn(addBtn, 1);
+            addGrid.Children.Add(_appsAddBtn);
+            Grid.SetColumn(_appsAddBtn, 1);
 
             addStack.Children.Add(addGrid);
 
@@ -1291,8 +1389,8 @@ namespace ScrollIt.UI
             quickGrid.Children.Add(_runningAppsCombo);
             Grid.SetColumn(_runningAppsCombo, 0);
 
-            Button quickAddBtn = Styles.CreatePillButton("Ajouter le processus", false);
-            quickAddBtn.Click += (s, e) =>
+            _appsQuickAddBtn = Styles.CreatePillButton(I18n.T("Apps_AddProcessBtn"), false);
+            _appsQuickAddBtn.Click += (s, e) =>
             {
                 if (_runningAppsCombo.SelectedItem != null)
                 {
@@ -1315,8 +1413,8 @@ namespace ScrollIt.UI
                     }
                 }
             };
-            quickGrid.Children.Add(quickAddBtn);
-            Grid.SetColumn(quickAddBtn, 1);
+            quickGrid.Children.Add(_appsQuickAddBtn);
+            Grid.SetColumn(_appsQuickAddBtn, 1);
 
             addStack.Children.Add(quickGrid);
             addCard.Child = addStack;
@@ -1339,7 +1437,7 @@ namespace ScrollIt.UI
 
             TextBlock listHeader = new TextBlock
             {
-                Text = string.Format("Applications désactivées ({0})", SettingsManager.Current.BlacklistedApps.Count),
+                Text = I18n.T("Apps_ListHeader", SettingsManager.Current.BlacklistedApps.Count),
                 Foreground = Styles.TextWhiteBrush,
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
@@ -1368,7 +1466,7 @@ namespace ScrollIt.UI
                 };
                 TextBlock emptyTitle = new TextBlock
                 {
-                    Text = "Aucune application désactivée",
+                    Text = I18n.T("Apps_EmptyTitle"),
                     Foreground = Styles.TextWhiteBrush,
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 13,
@@ -1376,7 +1474,7 @@ namespace ScrollIt.UI
                 };
                 TextBlock emptyDesc = new TextBlock
                 {
-                    Text = "Scroll-it est actif et fluide sur l'ensemble de vos logiciels et jeux.",
+                    Text = I18n.T("Apps_EmptyDesc"),
                     Foreground = Styles.TextMutedBrush,
                     FontSize = 11,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -1440,7 +1538,7 @@ namespace ScrollIt.UI
 
                     Button delBtn = new Button
                     {
-                        Content = "✕ Supprimer",
+                        Content = I18n.T("Apps_DeleteBtn"),
                         Foreground = new SolidColorBrush(Styles.DangerRed),
                         FontSize = 11,
                         FontWeight = FontWeights.SemiBold,
@@ -1471,7 +1569,6 @@ namespace ScrollIt.UI
                 }
             }
 
-            // Populate running apps combo asynchronously
             PopulateRunningAppsComboAsync();
         }
 
@@ -1493,7 +1590,6 @@ namespace ScrollIt.UI
                             string pName = p.ProcessName.ToLowerInvariant();
                             if (!string.IsNullOrEmpty(pName) && !seen.Contains(pName) && !SettingsManager.Current.BlacklistedApps.Contains(pName))
                             {
-                                // Filter out headless background services without visible windows
                                 if (p.MainWindowHandle != IntPtr.Zero || !string.IsNullOrEmpty(p.MainWindowTitle))
                                 {
                                     seen.Add(pName);
@@ -1561,7 +1657,6 @@ namespace ScrollIt.UI
 
             ImageSource result = null;
 
-            // 1. Try from currently running processes
             try
             {
                 Process[] procs = Process.GetProcessesByName(appName);
@@ -1584,7 +1679,6 @@ namespace ScrollIt.UI
             }
             catch { }
 
-            // 2. Try App Paths in Windows Registry
             if (result == null)
             {
                 try
@@ -1618,7 +1712,6 @@ namespace ScrollIt.UI
                 catch { }
             }
 
-            // 3. Fallback: Sleek vector app icon
             if (result == null)
             {
                 result = GetDefaultAppIcon();
@@ -1692,20 +1785,170 @@ namespace ScrollIt.UI
             Border card = Styles.CreateGlassCard(20, 12);
             StackPanel cStack = new StackPanel();
 
-            TextBlock optTitle = new TextBlock
+            _optTitle = new TextBlock
             {
-                Text = "Options Système & Comportement",
+                Text = I18n.T("Options_CardTitle"),
                 Foreground = Styles.TextWhiteBrush,
                 FontWeight = FontWeights.Bold,
                 FontSize = 15,
                 Margin = new Thickness(0, 0, 0, 16)
             };
-            cStack.Children.Add(optTitle);
+            cStack.Children.Add(_optTitle);
+
+            // Language Selection Section (Horizontal layout)
+            Grid langRow = new Grid { Margin = new Thickness(0, 0, 0, 20) };
+            langRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            langRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            _optLangTitle = new TextBlock
+            {
+                Text = I18n.T("Options_LanguageTitle"),
+                Foreground = Styles.TextWhiteBrush,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 16, 0)
+            };
+            Grid.SetColumn(_optLangTitle, 0);
+            langRow.Children.Add(_optLangTitle);
+
+            _btnLanguageDropdown = new ToggleButton
+            {
+                Height = 32,
+                Foreground = Styles.TextWhiteBrush,
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            UpdateLanguageDropdownText();
+
+            ControlTemplate langTpl = new ControlTemplate(typeof(ToggleButton));
+            FrameworkElementFactory lBorder = new FrameworkElementFactory(typeof(Border));
+            lBorder.Name = "btnBorder";
+            lBorder.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(22, 27, 34)));
+            lBorder.SetValue(Border.BorderBrushProperty, Styles.CardBorderBrush);
+            lBorder.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            lBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            lBorder.SetValue(Border.PaddingProperty, new Thickness(14, 6, 14, 6));
+
+            FrameworkElementFactory lContent = new FrameworkElementFactory(typeof(ContentPresenter));
+            lContent.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            lContent.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            lBorder.AppendChild(lContent);
+
+            Trigger lHover = new Trigger { Property = ToggleButton.IsMouseOverProperty, Value = true };
+            lHover.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "btnBorder"));
+            lHover.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(30, 37, 48)), "btnBorder"));
+            langTpl.Triggers.Add(lHover);
+
+            Trigger lChecked = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = true };
+            lChecked.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "btnBorder"));
+            lChecked.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(30, 37, 48)), "btnBorder"));
+            langTpl.Triggers.Add(lChecked);
+
+            langTpl.VisualTree = lBorder;
+            _btnLanguageDropdown.Template = langTpl;
+
+            _langPopup = new Popup
+            {
+                PlacementTarget = _btnLanguageDropdown,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = true,
+                AllowsTransparency = true,
+                PopupAnimation = PopupAnimation.Fade
+            };
+
+            System.Windows.Data.Binding langBinding = new System.Windows.Data.Binding("IsChecked")
+            {
+                Source = _btnLanguageDropdown,
+                Mode = System.Windows.Data.BindingMode.TwoWay
+            };
+            _langPopup.SetBinding(Popup.IsOpenProperty, langBinding);
+
+            Border popupBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(22, 27, 34)),
+                BorderBrush = Styles.CardBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(4),
+                Margin = new Thickness(0, 4, 0, 0),
+                Effect = new DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    BlurRadius = 16,
+                    ShadowDepth = 3,
+                    Opacity = 0.7
+                }
+            };
+
+            StackPanel pStack = new StackPanel { Width = 130 };
+
+            Action<string, AppLanguage, string> addItem = (label, lang, code) =>
+            {
+                Button itemBtn = new Button
+                {
+                    Content = label,
+                    Foreground = (I18n.CurrentLanguage == lang) ? Styles.AccentBrush : Styles.TextWhiteBrush,
+                    FontSize = 13,
+                    FontWeight = (I18n.CurrentLanguage == lang) ? FontWeights.Bold : FontWeights.Normal,
+                    Cursor = Cursors.Hand,
+                    Margin = new Thickness(0, 1, 0, 1)
+                };
+
+                ControlTemplate iTpl = new ControlTemplate(typeof(Button));
+                FrameworkElementFactory iBorder = new FrameworkElementFactory(typeof(Border));
+                iBorder.Name = "iBorder";
+                iBorder.SetValue(Border.BackgroundProperty, (I18n.CurrentLanguage == lang) ? new SolidColorBrush(Color.FromArgb(40, 0, 210, 255)) : Brushes.Transparent);
+                iBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+                iBorder.SetValue(Border.PaddingProperty, new Thickness(12, 6, 12, 6));
+
+                FrameworkElementFactory iContent = new FrameworkElementFactory(typeof(ContentPresenter));
+                iContent.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+                iContent.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+                iBorder.AppendChild(iContent);
+
+                Trigger iHover = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
+                iHover.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(32, 40, 52)), "iBorder"));
+                iHover.Setters.Add(new Setter(Button.ForegroundProperty, Brushes.White));
+                iTpl.Triggers.Add(iHover);
+
+                iTpl.VisualTree = iBorder;
+                itemBtn.Template = iTpl;
+
+                itemBtn.Click += (s, e) =>
+                {
+                    _btnLanguageDropdown.IsChecked = false;
+                    if (I18n.CurrentLanguage != lang)
+                    {
+                        SwitchLanguage(lang, code);
+                    }
+                };
+                pStack.Children.Add(itemBtn);
+            };
+
+            addItem("Français", AppLanguage.French, "fr");
+            addItem("English", AppLanguage.English, "en");
+            addItem("Русский", AppLanguage.Russian, "ru");
+
+            popupBorder.Child = pStack;
+            _langPopup.Child = popupBorder;
+
+            Grid langWrap = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+            langWrap.Children.Add(_btnLanguageDropdown);
+            langWrap.Children.Add(_langPopup);
+            Grid.SetColumn(langWrap, 1);
+            langRow.Children.Add(langWrap);
+
+            cStack.Children.Add(langRow);
 
             // Auto-start CheckBox
             _chkAutoStart = new CheckBox
             {
-                Content = "🚀 Lancer Scroll-it automatiquement au démarrage de Windows",
+                Content = I18n.T("Options_AutoStart"),
                 Foreground = Styles.TextWhiteBrush,
                 FontSize = 13,
                 Margin = new Thickness(0, 0, 0, 16),
@@ -1719,7 +1962,7 @@ namespace ScrollIt.UI
             // Ctrl Zoom CheckBox
             _chkCtrlZoom = new CheckBox
             {
-                Content = "🔍 Préserver le zoom natif Ctrl + Molette (zoom précis sans interpolation)",
+                Content = I18n.T("Options_CtrlZoom"),
                 Foreground = Styles.TextWhiteBrush,
                 FontSize = 13,
                 Margin = new Thickness(0, 0, 0, 16),
@@ -1733,7 +1976,7 @@ namespace ScrollIt.UI
             // Minimize to tray on close
             _chkMinimizeToTray = new CheckBox
             {
-                Content = "📥 Réduire dans la barre des tâches (Systray) lors de la fermeture",
+                Content = I18n.T("Options_MinimizeToTray"),
                 Foreground = Styles.TextWhiteBrush,
                 FontSize = 13,
                 Margin = new Thickness(0, 0, 0, 24),
@@ -1745,8 +1988,8 @@ namespace ScrollIt.UI
             cStack.Children.Add(_chkMinimizeToTray);
 
             // Reset Defaults Button
-            Button resetBtn = Styles.CreatePillButton("↺ Réinitialiser tous les réglages par défaut", false);
-            resetBtn.Click += (s, e) =>
+            _btnResetDefaults = Styles.CreatePillButton(I18n.T("Options_ResetDefaults"), false);
+            _btnResetDefaults.Click += (s, e) =>
             {
                 SettingsManager.Current.BypassCtrlZoom = true;
                 SettingsManager.Current.MinimizeToTrayOnClose = true;
@@ -1754,13 +1997,155 @@ namespace ScrollIt.UI
                 if (_chkMinimizeToTray != null) _chkMinimizeToTray.IsChecked = true;
                 SelectPreset("Mac OS", true);
             };
-            cStack.Children.Add(resetBtn);
+            cStack.Children.Add(_btnResetDefaults);
 
             card.Child = cStack;
             stack.Children.Add(card);
 
+            Button btnDonateOpt = CreateDonatePillButton(out _btnDonateTextOpt);
+            stack.Children.Add(btnDonateOpt);
+
             scroll.Content = stack;
             return scroll;
+        }
+
+        private Button CreateDonatePillButton(out TextBlock outLabel)
+        {
+            TextBlock txt = new TextBlock
+            {
+                Text = I18n.T("Btn_Donate"),
+                Foreground = new SolidColorBrush(Color.FromRgb(255, 115, 150)),
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            Button btn = new Button
+            {
+                Height = 32,
+                Padding = new Thickness(18, 0, 18, 0),
+                Margin = new Thickness(0, 14, 0, 6),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Content = txt
+            };
+
+            ControlTemplate donTpl = new ControlTemplate(typeof(Button));
+            FrameworkElementFactory donBorder = new FrameworkElementFactory(typeof(Border));
+            donBorder.Name = "donBorder";
+            donBorder.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(90, 255, 50, 95)));
+            donBorder.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromArgb(180, 255, 75, 120)));
+            donBorder.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            donBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(16));
+            donBorder.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Button.PaddingProperty));
+
+            FrameworkElementFactory donContent = new FrameworkElementFactory(typeof(ContentPresenter));
+            donContent.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            donContent.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            donBorder.AppendChild(donContent);
+
+            Trigger donHover = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
+            donHover.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(200, 255, 50, 95)), "donBorder"));
+            donHover.Setters.Add(new Setter(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(255, 120, 160)), "donBorder"));
+            donHover.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect
+            {
+                Color = Color.FromRgb(255, 50, 95),
+                BlurRadius = 12,
+                ShadowDepth = 0,
+                Opacity = 0.6
+            }, "donBorder"));
+            donTpl.Triggers.Add(donHover);
+
+            Trigger donPressed = new Trigger { Property = Button.IsPressedProperty, Value = true };
+            donPressed.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(240, 220, 35, 80)), "donBorder"));
+            donTpl.Triggers.Add(donPressed);
+
+            donTpl.VisualTree = donBorder;
+            btn.Template = donTpl;
+
+            btn.Click += (s, e) =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("https://paypal.me/ayazkad") { UseShellExecute = true });
+                }
+                catch
+                {
+                    try
+                    {
+                        Process.Start("https://paypal.me/ayazkad");
+                    }
+                    catch { }
+                }
+            };
+
+            outLabel = txt;
+            return btn;
+        }
+
+        private void SwitchLanguage(AppLanguage lang, string code)
+        {
+            I18n.CurrentLanguage = lang;
+            SettingsManager.Current.Language = code;
+            SettingsManager.Save();
+            UpdateLanguageDropdownText();
+            UpdateLocalizedTexts();
+        }
+
+        private void UpdateLanguageDropdownText()
+        {
+            if (_btnLanguageDropdown == null) return;
+            string curName = "Français";
+            if (I18n.CurrentLanguage == AppLanguage.English) curName = "English";
+            else if (I18n.CurrentLanguage == AppLanguage.Russian) curName = "Русский";
+            _btnLanguageDropdown.Content = curName + "  ▾";
+        }
+
+        private void UpdateLocalizedTexts()
+        {
+            if (_txtTabPhysics != null) _txtTabPhysics.Text = I18n.T("Tab_Physics");
+            if (_txtTabApps != null) _txtTabApps.Text = I18n.T("Tab_Apps");
+            if (_txtTabOptions != null) _txtTabOptions.Text = I18n.T("Tab_Options");
+
+            if (_presetsTitle != null) _presetsTitle.Text = I18n.T("Physics_PresetsTitle");
+            if (_presetDescText != null) _presetDescText.Text = I18n.GetPresetDescription(SettingsManager.Current.ActivePreset);
+
+            if (_lblStepTitle != null) _lblStepTitle.Text = I18n.T("Slider_StepSize_Title");
+            if (_lblStepDesc != null) _lblStepDesc.Text = I18n.T("Slider_StepSize_Desc");
+
+            if (_lblTimeTitle != null) _lblTimeTitle.Text = I18n.T("Slider_AnimTime_Title");
+            if (_lblTimeDesc != null) _lblTimeDesc.Text = I18n.T("Slider_AnimTime_Desc");
+
+            if (_lblAccelTitle != null) _lblAccelTitle.Text = I18n.T("Slider_Accel_Title");
+            if (_lblAccelDesc != null) _lblAccelDesc.Text = I18n.T("Slider_Accel_Desc");
+
+            if (_lblTailTitle != null) _lblTailTitle.Text = I18n.T("Slider_Tail_Title");
+            if (_lblTailDesc != null) _lblTailDesc.Text = I18n.T("Slider_Tail_Desc");
+
+            if (_appsInfoTitle != null) _appsInfoTitle.Text = I18n.T("Apps_CardTitle");
+            if (_appsInfoDesc != null) _appsInfoDesc.Text = I18n.T("Apps_CardDesc");
+            if (_appsAddTitle != null) _appsAddTitle.Text = I18n.T("Apps_AddTitle");
+            if (_appsAddBtn != null) _appsAddBtn.Content = I18n.T("Apps_AddBtn");
+            if (_appsQuickAddBtn != null) _appsQuickAddBtn.Content = I18n.T("Apps_AddProcessBtn");
+
+            if (_optTitle != null) _optTitle.Text = I18n.T("Options_CardTitle");
+            if (_optLangTitle != null) _optLangTitle.Text = I18n.T("Options_LanguageTitle");
+            if (_chkAutoStart != null) _chkAutoStart.Content = I18n.T("Options_AutoStart");
+            if (_chkCtrlZoom != null) _chkCtrlZoom.Content = I18n.T("Options_CtrlZoom");
+            if (_chkMinimizeToTray != null) _chkMinimizeToTray.Content = I18n.T("Options_MinimizeToTray");
+            if (_btnResetDefaults != null) _btnResetDefaults.Content = I18n.T("Options_ResetDefaults");
+            if (_btnDonateText != null) _btnDonateText.Text = I18n.T("Btn_Donate");
+            if (_btnDonateTextOpt != null) _btnDonateTextOpt.Text = I18n.T("Btn_Donate");
+
+            UpdateStatusUI(false);
+            RefreshAppsList();
+            UpdateLanguageDropdownText();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                UpdateTabIndicator(_currentTabIndex, false);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private Stopwatch _presetAnimStopwatch = null;
@@ -1791,7 +2176,6 @@ namespace ScrollIt.UI
 
             ScrollPreset preset = SettingsManager.Presets[pName];
 
-            // 1. Update settings directly under _isUpdatingUI guard
             _isUpdatingUI = true;
             SettingsManager.Current.ActivePreset = pName;
             SettingsManager.Current.StepSize = preset.StepSize;
@@ -1801,7 +2185,6 @@ namespace ScrollIt.UI
             SettingsManager.Save();
             TrayManager.UpdateState();
 
-            // 2. Highlight active preset button immediately
             foreach (var pair in _presetButtons)
             {
                 bool isAct = (pair.Key == pName);
@@ -1809,8 +2192,7 @@ namespace ScrollIt.UI
                 pair.Value.Foreground = isAct ? (Brush)Brushes.Black : (Brush)Styles.TextWhiteBrush;
             }
 
-            // 3. Smooth fade on description text
-            string desc = preset.Description;
+            string desc = I18n.GetPresetDescription(pName);
             if (_presetDescText != null)
             {
                 if (animate && _presetDescText.Text != desc)
@@ -1829,7 +2211,6 @@ namespace ScrollIt.UI
                 }
             }
 
-            // 4. Smoothly animate sliders to target preset values
             if (!animate)
             {
                 StopPresetAnimation();
@@ -1863,7 +2244,6 @@ namespace ScrollIt.UI
             if (_chkCtrlZoom != null) _chkCtrlZoom.IsChecked = cfg.BypassCtrlZoom;
             if (_chkMinimizeToTray != null) _chkMinimizeToTray.IsChecked = cfg.MinimizeToTrayOnClose;
 
-            // Highlight active preset pill
             foreach (var pair in _presetButtons)
             {
                 bool isAct = (pair.Key == cfg.ActivePreset);
@@ -1871,15 +2251,12 @@ namespace ScrollIt.UI
                 pair.Value.Foreground = isAct ? (Brush)Brushes.Black : (Brush)Styles.TextWhiteBrush;
             }
 
-            string desc = SettingsManager.Presets.ContainsKey(cfg.ActivePreset)
-                ? SettingsManager.Presets[cfg.ActivePreset].Description
-                : "Paramètres personnalisés ajustés manuellement.";
-
             if (_presetDescText != null)
             {
-                _presetDescText.Text = desc;
+                _presetDescText.Text = I18n.GetPresetDescription(cfg.ActivePreset);
             }
 
+            UpdateLanguageDropdownText();
             UpdateStatusUI();
             _isUpdatingUI = false;
         }
@@ -1890,7 +2267,6 @@ namespace ScrollIt.UI
 
             _isUpdatingUI = true;
 
-            // Disable snap-to-tick temporarily for ultra-fluid interpolation
             if (_stepSlider != null) _stepSlider.IsSnapToTickEnabled = false;
             if (_timeSlider != null) _timeSlider.IsSnapToTickEnabled = false;
             if (_accelSlider != null) _accelSlider.IsSnapToTickEnabled = false;
@@ -1918,7 +2294,6 @@ namespace ScrollIt.UI
                 double elapsed = _presetAnimStopwatch.Elapsed.TotalMilliseconds;
                 double t = Math.Min(1.0, elapsed / durationMs);
 
-                // Quartic ease out: 1 - (1 - t)^4
                 double ease = 1.0 - Math.Pow(1.0 - t, 4);
 
                 _isUpdatingUI = true;
@@ -1951,21 +2326,32 @@ namespace ScrollIt.UI
         {
             bool enabled = SettingsManager.Current.Enabled;
             double targetX = enabled ? 16.0 : 0.0;
-            Color targetColor = enabled ? Styles.SuccessGreen : Color.FromRgb(48, 54, 61);
+            Color targetColor = enabled ? Color.FromRgb(46, 204, 113) : Color.FromRgb(48, 54, 61);
 
             if (_toggleThumbTransform != null)
             {
                 if (!animate)
                 {
-                    _toggleThumbTransform.BeginAnimation(TranslateTransform.XProperty, null);
-                    _toggleThumbTransform.X = targetX;
+                    if (!_isStatusAnimating)
+                    {
+                        _toggleThumbTransform.BeginAnimation(TranslateTransform.XProperty, null);
+                        _toggleThumbTransform.X = targetX;
+                    }
                 }
                 else
                 {
-                    QuarticEase ease = new QuarticEase { EasingMode = EasingMode.EaseOut };
-                    DoubleAnimation slideAnim = new DoubleAnimation(_toggleThumbTransform.X, targetX, TimeSpan.FromMilliseconds(220))
+                    _isStatusAnimating = true;
+                    double fromX = _toggleThumbTransform.X;
+                    CubicEase ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+                    DoubleAnimation slideAnim = new DoubleAnimation(fromX, targetX, TimeSpan.FromMilliseconds(240))
                     {
                         EasingFunction = ease
+                    };
+                    slideAnim.Completed += (s, e) =>
+                    {
+                        _isStatusAnimating = false;
+                        _toggleThumbTransform.X = targetX;
+                        _toggleThumbTransform.BeginAnimation(TranslateTransform.XProperty, null);
                     };
                     _toggleThumbTransform.BeginAnimation(TranslateTransform.XProperty, slideAnim);
                 }
@@ -1975,15 +2361,24 @@ namespace ScrollIt.UI
             {
                 if (!animate)
                 {
-                    _toggleTrackBrush.BeginAnimation(SolidColorBrush.ColorProperty, null);
-                    _toggleTrackBrush.Color = targetColor;
+                    if (!_isStatusAnimating)
+                    {
+                        _toggleTrackBrush.BeginAnimation(SolidColorBrush.ColorProperty, null);
+                        _toggleTrackBrush.Color = targetColor;
+                    }
                 }
                 else
                 {
-                    QuarticEase ease = new QuarticEase { EasingMode = EasingMode.EaseOut };
-                    ColorAnimation colorAnim = new ColorAnimation(_toggleTrackBrush.Color, targetColor, TimeSpan.FromMilliseconds(220))
+                    Color fromColor = _toggleTrackBrush.Color;
+                    CubicEase ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+                    ColorAnimation colorAnim = new ColorAnimation(fromColor, targetColor, TimeSpan.FromMilliseconds(240))
                     {
                         EasingFunction = ease
+                    };
+                    colorAnim.Completed += (s, e) =>
+                    {
+                        _toggleTrackBrush.Color = targetColor;
+                        _toggleTrackBrush.BeginAnimation(SolidColorBrush.ColorProperty, null);
                     };
                     _toggleTrackBrush.BeginAnimation(SolidColorBrush.ColorProperty, colorAnim);
                 }
@@ -1991,27 +2386,45 @@ namespace ScrollIt.UI
 
             if (_statusText != null)
             {
-                string targetText = enabled ? "Actif" : "Inactif";
+                string targetText = enabled ? I18n.T("Status_Active") : I18n.T("Status_Inactive");
                 Brush targetBrush = enabled ? Styles.TextWhiteBrush : Styles.TextMutedBrush;
 
                 if (!animate)
                 {
-                    _statusText.Text = targetText;
-                    _statusText.Foreground = targetBrush;
-                    _statusText.Opacity = 1.0;
+                    if (!_isStatusAnimating)
+                    {
+                        _statusText.BeginAnimation(UIElement.OpacityProperty, null);
+                        _statusText.Text = targetText;
+                        _statusText.Foreground = targetBrush;
+                        _statusText.Opacity = 1.0;
+                    }
                 }
                 else if (_statusText.Text != targetText)
                 {
-                    DoubleAnimation fadeOut = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(80));
+                    DoubleAnimation fadeOut = new DoubleAnimation(0.0, TimeSpan.FromMilliseconds(90));
                     fadeOut.Completed += (s, e) =>
                     {
                         _statusText.Text = targetText;
                         _statusText.Foreground = targetBrush;
-                        _statusText.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(140)));
+                        DoubleAnimation fadeIn = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(130));
+                        _statusText.BeginAnimation(UIElement.OpacityProperty, fadeIn);
                     };
                     _statusText.BeginAnimation(UIElement.OpacityProperty, fadeOut);
                 }
+                else
+                {
+                    _statusText.Foreground = targetBrush;
+                }
             }
+        }
+
+        private void OnLanguageUpdated()
+        {
+            if (_isUpdatingUI) return;
+            Dispatcher.Invoke(new Action(() =>
+            {
+                UpdateLocalizedTexts();
+            }));
         }
 
         private void OnSettingsUpdated()

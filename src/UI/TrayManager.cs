@@ -32,6 +32,11 @@ namespace ScrollIt.UI
             };
 
             BuildContextMenu();
+            I18n.LanguageChanged += () =>
+            {
+                BuildContextMenu();
+                UpdateState();
+            };
         }
 
         public static void UpdateState()
@@ -43,7 +48,7 @@ namespace ScrollIt.UI
             if (_enableMenuItem != null)
             {
                 _enableMenuItem.Checked = enabled;
-                _enableMenuItem.Text = enabled ? "Actif" : "En pause (Désactivé)";
+                _enableMenuItem.Text = enabled ? I18n.T("Tray_StatusActive") : I18n.T("Tray_StatusPaused");
             }
 
             if (_autoStartMenuItem != null)
@@ -76,8 +81,9 @@ namespace ScrollIt.UI
             menu.ShowCheckMargin = false;
 
             // 1. Enable / Disable toggle
+            bool isEnabled = SettingsManager.Current.Enabled;
             _enableMenuItem = new ToolStripMenuItem(
-                SettingsManager.Current.Enabled ? "Actif" : "En pause (Désactivé)",
+                isEnabled ? I18n.T("Tray_StatusActive") : I18n.T("Tray_StatusPaused"),
                 null,
                 new EventHandler((s, e) =>
                 {
@@ -87,7 +93,7 @@ namespace ScrollIt.UI
                 })
             )
             {
-                Checked = SettingsManager.Current.Enabled,
+                Checked = isEnabled,
                 Font = new Font("Segoe UI", 9.25F, FontStyle.Bold)
             };
             menu.Items.Add(_enableMenuItem);
@@ -95,7 +101,7 @@ namespace ScrollIt.UI
             menu.Items.Add(new ToolStripSeparator());
 
             // 2. Presets submenu
-            _presetsMenu = new ToolStripMenuItem("Profils / Presets");
+            _presetsMenu = new ToolStripMenuItem(I18n.T("Tray_PresetsMenu"));
             _presetsMenu.DropDown.BackColor = Color.FromArgb(22, 27, 34);
             _presetsMenu.DropDown.ForeColor = Color.FromArgb(240, 246, 252);
             _presetsMenu.DropDown.Font = new Font("Segoe UI", 9.25F, FontStyle.Regular);
@@ -116,13 +122,13 @@ namespace ScrollIt.UI
             menu.Items.Add(new ToolStripSeparator());
 
             // 3. Settings window
-            menu.Items.Add(new ToolStripMenuItem("⚙ Réglages Scroll-it...", null, new EventHandler((s, e) =>
+            menu.Items.Add(new ToolStripMenuItem(I18n.T("Tray_Settings"), null, new EventHandler((s, e) =>
             {
                 if (_showMainWindowAction != null) _showMainWindowAction();
             })));
 
             // 4. Auto-start
-            _autoStartMenuItem = new ToolStripMenuItem("🚀 Lancer au démarrage", null, new EventHandler((s, e) =>
+            _autoStartMenuItem = new ToolStripMenuItem(I18n.T("Tray_AutoStart"), null, new EventHandler((s, e) =>
             {
                 bool newState = !SettingsManager.Current.StartWithWindows;
                 SettingsManager.SetAutoStart(newState);
@@ -136,7 +142,7 @@ namespace ScrollIt.UI
             menu.Items.Add(new ToolStripSeparator());
 
             // 5. Exit
-            menu.Items.Add(new ToolStripMenuItem("❌ Quitter", null, new EventHandler((s, e) =>
+            menu.Items.Add(new ToolStripMenuItem(I18n.T("Tray_Exit"), null, new EventHandler((s, e) =>
             {
                 ScrollPhysics.Shutdown();
                 MouseHook.Uninstall();

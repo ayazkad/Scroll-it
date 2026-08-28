@@ -5,17 +5,18 @@ using System.Reflection;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Forms;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using Microsoft.Win32;
+using ScrollIt.Engine;
 using Application = System.Windows.Application;
 using Button = System.Windows.Controls.Button;
 using CheckBox = System.Windows.Controls.CheckBox;
 using Color = System.Windows.Media.Color;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
-using MessageBox = System.Windows.MessageBox;
 using Orientation = System.Windows.Controls.Orientation;
 using Path = System.IO.Path;
 using ProgressBar = System.Windows.Controls.ProgressBar;
@@ -41,6 +42,10 @@ namespace ScrollIt.Setup
 
         private Grid _mainContentGrid;
         private Grid _bottomBarGrid;
+        private Grid _modalOverlayGrid;
+        private TextBlock _titleTxt;
+        private ToggleButton _btnLanguageDropdown;
+        private Popup _langPopup;
         private int _currentStep = 1;
 
         // Configuration state
@@ -63,7 +68,9 @@ namespace ScrollIt.Setup
 
         public SetupWindow()
         {
-            Title = "Installation de Scroll-it";
+            I18n.SetAutoLanguage();
+
+            Title = I18n.T("Setup_WindowTitle");
             Width = 620;
             Height = 470;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -88,6 +95,25 @@ namespace ScrollIt.Setup
                     DwmSetWindowAttribute(handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
                 }
                 catch { }
+            };
+
+            PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (_btnLanguageDropdown != null && _btnLanguageDropdown.IsChecked == true)
+                {
+                    if (!_btnLanguageDropdown.IsMouseOver)
+                    {
+                        _btnLanguageDropdown.IsChecked = false;
+                    }
+                }
+            };
+
+            Deactivated += (s, e) =>
+            {
+                if (_btnLanguageDropdown != null)
+                {
+                    _btnLanguageDropdown.IsChecked = false;
+                }
             };
 
             BuildUI();
@@ -148,33 +174,32 @@ namespace ScrollIt.Setup
                 Margin = new Thickness(18, 0, 0, 0)
             };
 
-            // Real vector project logo in titlebar
             UIElement smallLogo = CreateProjectLogo(24);
             FrameworkElement smallElem = smallLogo as FrameworkElement;
             if (smallElem != null) smallElem.Margin = new Thickness(0, 0, 10, 0);
             titleLeft.Children.Add(smallLogo);
 
-            TextBlock titleTxt = new TextBlock
+            _titleTxt = new TextBlock
             {
-                Text = "Installation de Scroll-it v1.0.0",
+                Text = I18n.T("Setup_HeaderTitle"),
                 Foreground = TextWhiteBrush,
                 FontWeight = FontWeights.Bold,
                 FontSize = 14,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            titleLeft.Children.Add(titleTxt);
+            titleLeft.Children.Add(_titleTxt);
             titleBar.Children.Add(titleLeft);
 
-            // Close button without OS hover effect
+            // Right side: Close button
             Button closeBtn = new Button
             {
                 Content = "✕",
-                Width = 38,
-                Height = 32,
+                Width = 34,
+                Height = 28,
                 Foreground = TextMutedBrush,
                 FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 0, 10, 0),
+                Margin = new Thickness(0, 0, 12, 0),
                 Cursor = System.Windows.Input.Cursors.Hand
             };
             FrameworkElementFactory closeBorder = new FrameworkElementFactory(typeof(Border));
@@ -191,10 +216,7 @@ namespace ScrollIt.Setup
             {
                 if (_currentStep < 3)
                 {
-                    if (MessageBox.Show("Voulez-vous vraiment annuler l'installation de Scroll-it ?", "Scroll-it Setup", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-                    {
-                        Close();
-                    }
+                    ShowConfirmModal(I18n.T("Setup_CancelConfirm"), () => Close());
                 }
                 else
                 {
@@ -202,6 +224,7 @@ namespace ScrollIt.Setup
                 }
             };
             titleBar.Children.Add(closeBtn);
+
             root.Children.Add(titleBarBorder);
             Grid.SetRow(titleBarBorder, 0);
 
@@ -225,8 +248,324 @@ namespace ScrollIt.Setup
             root.Children.Add(_bottomBarGrid);
             Grid.SetRow(_bottomBarGrid, 2);
 
+            // In-app Modal Dialog Overlay Grid (Spans full window)
+            _modalOverlayGrid = new Grid
+            {
+                Visibility = Visibility.Collapsed
+            };
+            root.Children.Add(_modalOverlayGrid);
+            Grid.SetRow(_modalOverlayGrid, 0);
+            Grid.SetRowSpan(_modalOverlayGrid, 3);
+
             outerBorder.Child = root;
             Content = outerBorder;
+        }
+
+        private void ShowConfirmModal(string message, Action onYes, Action onNo = null)
+        {
+            _modalOverlayGrid.Children.Clear();
+            _modalOverlayGrid.Visibility = Visibility.Visible;
+
+            Border backdrop = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)),
+                CornerRadius = new CornerRadius(9)
+            };
+            _modalOverlayGrid.Children.Add(backdrop);
+
+            Border modalCard = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(18, 22, 29)),
+                BorderBrush = CardBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(22, 18, 22, 18),
+                MaxWidth = 540,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Effect = new DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    BlurRadius = 24,
+                    ShadowDepth = 4,
+                    Opacity = 0.85
+                }
+            };
+
+            StackPanel mStack = new StackPanel();
+
+            StackPanel headerStack = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 18) };
+
+            Grid iconCircle = new Grid { Width = 36, Height = 36, Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center };
+            Ellipse cBg = new Ellipse { Fill = new SolidColorBrush(Color.FromArgb(40, 0, 210, 255)), Stroke = AccentBrush, StrokeThickness = 1.5 };
+            TextBlock qMark = new TextBlock
+            {
+                Text = "?",
+                Foreground = AccentBrush,
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            iconCircle.Children.Add(cBg);
+            iconCircle.Children.Add(qMark);
+            headerStack.Children.Add(iconCircle);
+
+            TextBlock msgTxt = new TextBlock
+            {
+                Text = message,
+                Foreground = TextWhiteBrush,
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.NoWrap,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            headerStack.Children.Add(msgTxt);
+            mStack.Children.Add(headerStack);
+
+            StackPanel btnStack = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
+            string yesText = (I18n.CurrentLanguage == AppLanguage.French) ? "Oui" : (I18n.CurrentLanguage == AppLanguage.Russian ? "Да" : "Yes");
+            string noText = (I18n.CurrentLanguage == AppLanguage.French) ? "Non" : (I18n.CurrentLanguage == AppLanguage.Russian ? "Нет" : "No");
+
+            Button btnNo = CreateButton(noText, false, () =>
+            {
+                _modalOverlayGrid.Visibility = Visibility.Collapsed;
+                _modalOverlayGrid.Children.Clear();
+                if (onNo != null) onNo();
+            });
+            btnNo.Width = 84;
+            btnNo.Margin = new Thickness(0, 0, 10, 0);
+            btnStack.Children.Add(btnNo);
+
+            Button btnYes = CreateButton(yesText, true, () =>
+            {
+                _modalOverlayGrid.Visibility = Visibility.Collapsed;
+                _modalOverlayGrid.Children.Clear();
+                if (onYes != null) onYes();
+            });
+            btnYes.Width = 84;
+            btnStack.Children.Add(btnYes);
+
+            mStack.Children.Add(btnStack);
+            modalCard.Child = mStack;
+            _modalOverlayGrid.Children.Add(modalCard);
+        }
+
+        private void ShowAlertModal(string message, Action onOk = null)
+        {
+            _modalOverlayGrid.Children.Clear();
+            _modalOverlayGrid.Visibility = Visibility.Visible;
+
+            Border backdrop = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)),
+                CornerRadius = new CornerRadius(9)
+            };
+            _modalOverlayGrid.Children.Add(backdrop);
+
+            Border modalCard = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(18, 22, 29)),
+                BorderBrush = CardBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(24, 20, 24, 20),
+                MaxWidth = 440,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Effect = new DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    BlurRadius = 24,
+                    ShadowDepth = 4,
+                    Opacity = 0.85
+                }
+            };
+
+            StackPanel mStack = new StackPanel();
+
+            TextBlock msgTxt = new TextBlock
+            {
+                Text = message,
+                Foreground = TextWhiteBrush,
+                FontSize = 13,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 18),
+                LineHeight = 18
+            };
+            mStack.Children.Add(msgTxt);
+
+            StackPanel btnStack = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
+            Button btnOk = CreateButton("OK", true, () =>
+            {
+                _modalOverlayGrid.Visibility = Visibility.Collapsed;
+                _modalOverlayGrid.Children.Clear();
+                if (onOk != null) onOk();
+            });
+            btnOk.Width = 84;
+            btnStack.Children.Add(btnOk);
+
+            mStack.Children.Add(btnStack);
+            modalCard.Child = mStack;
+            _modalOverlayGrid.Children.Add(modalCard);
+        }
+
+        private UIElement CreateLanguageDropdown()
+        {
+            _btnLanguageDropdown = new ToggleButton
+            {
+                Height = 32,
+                Foreground = TextWhiteBrush,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            UpdateLanguageDropdownText();
+
+            ControlTemplate tpl = new ControlTemplate(typeof(ToggleButton));
+            FrameworkElementFactory border = new FrameworkElementFactory(typeof(Border));
+            border.Name = "btnBorder";
+            border.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(22, 27, 34)));
+            border.SetValue(Border.BorderBrushProperty, CardBorderBrush);
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            border.SetValue(Border.PaddingProperty, new Thickness(12, 4, 12, 4));
+
+            FrameworkElementFactory content = new FrameworkElementFactory(typeof(ContentPresenter));
+            content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            border.AppendChild(content);
+
+            Trigger hoverTrigger = new Trigger { Property = ToggleButton.IsMouseOverProperty, Value = true };
+            hoverTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, AccentBrush, "btnBorder"));
+            hoverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(30, 37, 48)), "btnBorder"));
+            tpl.Triggers.Add(hoverTrigger);
+
+            Trigger checkedTrigger = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = true };
+            checkedTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, AccentBrush, "btnBorder"));
+            checkedTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(30, 37, 48)), "btnBorder"));
+            tpl.Triggers.Add(checkedTrigger);
+
+            tpl.VisualTree = border;
+            _btnLanguageDropdown.Template = tpl;
+
+            _langPopup = new Popup
+            {
+                PlacementTarget = _btnLanguageDropdown,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = true,
+                AllowsTransparency = true,
+                PopupAnimation = PopupAnimation.Fade
+            };
+
+            System.Windows.Data.Binding binding = new System.Windows.Data.Binding("IsChecked")
+            {
+                Source = _btnLanguageDropdown,
+                Mode = System.Windows.Data.BindingMode.TwoWay
+            };
+            _langPopup.SetBinding(Popup.IsOpenProperty, binding);
+
+            Border popupBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(22, 27, 34)),
+                BorderBrush = CardBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(4),
+                Margin = new Thickness(0, 4, 0, 0),
+                Effect = new DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    BlurRadius = 16,
+                    ShadowDepth = 3,
+                    Opacity = 0.7
+                }
+            };
+
+            StackPanel pStack = new StackPanel { Width = 110 };
+
+            Action<string, AppLanguage> addItem = (label, lang) =>
+            {
+                Button itemBtn = new Button
+                {
+                    Content = label,
+                    Foreground = (I18n.CurrentLanguage == lang) ? AccentBrush : TextWhiteBrush,
+                    FontSize = 12,
+                    FontWeight = (I18n.CurrentLanguage == lang) ? FontWeights.Bold : FontWeights.Normal,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Margin = new Thickness(0, 1, 0, 1)
+                };
+
+                ControlTemplate iTpl = new ControlTemplate(typeof(Button));
+                FrameworkElementFactory iBorder = new FrameworkElementFactory(typeof(Border));
+                iBorder.Name = "iBorder";
+                iBorder.SetValue(Border.BackgroundProperty, (I18n.CurrentLanguage == lang) ? new SolidColorBrush(Color.FromArgb(40, 0, 210, 255)) : Brushes.Transparent);
+                iBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+                iBorder.SetValue(Border.PaddingProperty, new Thickness(10, 6, 10, 6));
+
+                FrameworkElementFactory iContent = new FrameworkElementFactory(typeof(ContentPresenter));
+                iContent.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+                iContent.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+                iBorder.AppendChild(iContent);
+
+                Trigger iHover = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
+                iHover.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(32, 40, 52)), "iBorder"));
+                iHover.Setters.Add(new Setter(Button.ForegroundProperty, Brushes.White));
+                iTpl.Triggers.Add(iHover);
+
+                iTpl.VisualTree = iBorder;
+                itemBtn.Template = iTpl;
+
+                itemBtn.Click += (s, e) =>
+                {
+                    _btnLanguageDropdown.IsChecked = false;
+                    if (I18n.CurrentLanguage != lang)
+                    {
+                        I18n.CurrentLanguage = lang;
+                        Title = I18n.T("Setup_WindowTitle");
+                        if (_titleTxt != null) _titleTxt.Text = I18n.T("Setup_HeaderTitle");
+                        UpdateLanguageDropdownText();
+
+                        if (_currentStep == 1) ShowStep1();
+                        else if (_currentStep == 2) ShowStep2();
+                    }
+                };
+                pStack.Children.Add(itemBtn);
+            };
+
+            addItem("Français", AppLanguage.French);
+            addItem("English", AppLanguage.English);
+            addItem("Русский", AppLanguage.Russian);
+
+            popupBorder.Child = pStack;
+            _langPopup.Child = popupBorder;
+
+            Grid wrapGrid = new Grid();
+            wrapGrid.Children.Add(_btnLanguageDropdown);
+            wrapGrid.Children.Add(_langPopup);
+            return wrapGrid;
+        }
+
+        private void UpdateLanguageDropdownText()
+        {
+            if (_btnLanguageDropdown == null) return;
+            string curName = "Français";
+            if (I18n.CurrentLanguage == AppLanguage.English) curName = "English";
+            else if (I18n.CurrentLanguage == AppLanguage.Russian) curName = "Русский";
+            _btnLanguageDropdown.Content = curName + "  ▾";
         }
 
         #region Step 1: Welcome Screen
@@ -242,7 +581,6 @@ namespace ScrollIt.Setup
                 HorizontalAlignment = HorizontalAlignment.Center
             };
 
-            // Real glowing project logo badge
             Border logoContainer = new Border
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -260,7 +598,7 @@ namespace ScrollIt.Setup
 
             TextBlock welcomeHeading = new TextBlock
             {
-                Text = "Bienvenue dans le programme d'installation de Scroll-it",
+                Text = I18n.T("Setup_WelcomeHeading"),
                 Foreground = TextWhiteBrush,
                 FontSize = 17,
                 FontWeight = FontWeights.Bold,
@@ -271,7 +609,7 @@ namespace ScrollIt.Setup
 
             TextBlock welcomeDesc = new TextBlock
             {
-                Text = "Scroll-it apporte le défilement ultra-fluide à l'ensemble de vos applications Windows.",
+                Text = I18n.T("Setup_WelcomeDesc"),
                 Foreground = TextMutedBrush,
                 FontSize = 13,
                 TextAlignment = TextAlignment.Center,
@@ -282,13 +620,18 @@ namespace ScrollIt.Setup
             centerPanel.Children.Add(welcomeDesc);
             _mainContentGrid.Children.Add(centerPanel);
 
-            // Bottom Buttons (pinned to bottom)
-            Button btnCancel = CreateButton("Annuler", false, () => Close());
+            // Bottom Language Dropdown on Left (Column 0)
+            UIElement langBar = CreateLanguageDropdown();
+            _bottomBarGrid.Children.Add(langBar);
+            Grid.SetColumn(langBar, 0);
+
+            // Bottom Buttons
+            Button btnCancel = CreateButton(I18n.T("Setup_BtnCancel"), false, () => ShowConfirmModal(I18n.T("Setup_CancelConfirm"), () => Close()));
             btnCancel.Width = 96;
             _bottomBarGrid.Children.Add(btnCancel);
             Grid.SetColumn(btnCancel, 1);
 
-            Button btnNext = CreateButton("Suivant >", true, () => ShowStep2());
+            Button btnNext = CreateButton(I18n.T("Setup_BtnNext"), true, () => ShowStep2());
             btnNext.Width = 114;
             btnNext.Margin = new Thickness(10, 0, 0, 0);
             _bottomBarGrid.Children.Add(btnNext);
@@ -307,7 +650,7 @@ namespace ScrollIt.Setup
 
             TextBlock lblPathTitle = new TextBlock
             {
-                Text = "Dossier de destination",
+                Text = I18n.T("Setup_PathTitle"),
                 Foreground = TextWhiteBrush,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
@@ -317,7 +660,7 @@ namespace ScrollIt.Setup
 
             TextBlock lblPathDesc = new TextBlock
             {
-                Text = "Choisissez le dossier dans lequel installer Scroll-it :",
+                Text = I18n.T("Setup_PathDesc"),
                 Foreground = TextMutedBrush,
                 FontSize = 12,
                 Margin = new Thickness(0, 0, 0, 8)
@@ -330,7 +673,7 @@ namespace ScrollIt.Setup
                 Background = CardBgBrush,
                 BorderBrush = CardBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(0),
+                CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(10),
                 Margin = new Thickness(0, 0, 0, 16)
             };
@@ -339,7 +682,7 @@ namespace ScrollIt.Setup
             pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            string defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Scroll-it");
+            string defaultPath = _txtInstallPath != null ? _txtInstallPath.Text : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Scroll-it");
             _txtInstallPath = new TextBox
             {
                 Text = defaultPath,
@@ -355,11 +698,11 @@ namespace ScrollIt.Setup
             pathGrid.Children.Add(_txtInstallPath);
             Grid.SetColumn(_txtInstallPath, 0);
 
-            Button btnBrowse = CreateButton("Parcourir...", false, () =>
+            Button btnBrowse = CreateButton(I18n.T("Setup_BtnBrowse"), false, () =>
             {
                 using (FolderBrowserDialog fbd = new FolderBrowserDialog())
                 {
-                    fbd.Description = "Sélectionnez le dossier d'installation pour Scroll-it";
+                    fbd.Description = I18n.T("Setup_BrowseDialogDesc");
                     fbd.SelectedPath = _txtInstallPath.Text;
                     if (fbd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                     {
@@ -377,7 +720,7 @@ namespace ScrollIt.Setup
             // Options checkboxes
             TextBlock lblOptionsTitle = new TextBlock
             {
-                Text = "Options supplémentaires",
+                Text = I18n.T("Setup_OptionsTitle"),
                 Foreground = TextWhiteBrush,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
@@ -387,10 +730,10 @@ namespace ScrollIt.Setup
 
             _chkDesktopShortcut = new CheckBox
             {
-                Content = "Créer un raccourci sur le Bureau",
+                Content = I18n.T("Setup_ChkDesktop"),
                 Foreground = TextWhiteBrush,
                 FontSize = 12,
-                IsChecked = true,
+                IsChecked = _chkDesktopShortcut != null ? _chkDesktopShortcut.IsChecked : true,
                 Margin = new Thickness(0, 0, 0, 6),
                 Cursor = System.Windows.Input.Cursors.Hand
             };
@@ -398,10 +741,10 @@ namespace ScrollIt.Setup
 
             _chkStartMenuShortcut = new CheckBox
             {
-                Content = "Ajouter Scroll-it au Menu Démarrer",
+                Content = I18n.T("Setup_ChkStartMenu"),
                 Foreground = TextWhiteBrush,
                 FontSize = 12,
-                IsChecked = true,
+                IsChecked = _chkStartMenuShortcut != null ? _chkStartMenuShortcut.IsChecked : true,
                 Margin = new Thickness(0, 0, 0, 6),
                 Cursor = System.Windows.Input.Cursors.Hand
             };
@@ -409,10 +752,10 @@ namespace ScrollIt.Setup
 
             _chkAutoStart = new CheckBox
             {
-                Content = "Lancer Scroll-it automatiquement au démarrage de Windows",
+                Content = I18n.T("Setup_ChkAutoStart"),
                 Foreground = TextWhiteBrush,
                 FontSize = 12,
-                IsChecked = true,
+                IsChecked = _chkAutoStart != null ? _chkAutoStart.IsChecked : true,
                 Margin = new Thickness(0, 0, 0, 2),
                 Cursor = System.Windows.Input.Cursors.Hand
             };
@@ -420,13 +763,18 @@ namespace ScrollIt.Setup
 
             _mainContentGrid.Children.Add(stack);
 
-            // Bottom Buttons (pinned to bottom)
-            Button btnBack = CreateButton("< Précédent", false, () => ShowStep1());
+            // Bottom Language Dropdown on Left (Column 0)
+            UIElement langBar = CreateLanguageDropdown();
+            _bottomBarGrid.Children.Add(langBar);
+            Grid.SetColumn(langBar, 0);
+
+            // Bottom Buttons
+            Button btnBack = CreateButton(I18n.T("Setup_BtnBack"), false, () => ShowStep1());
             btnBack.Width = 100;
             _bottomBarGrid.Children.Add(btnBack);
             Grid.SetColumn(btnBack, 1);
 
-            Button btnInstall = CreateButton("Installer", true, () => StartInstallation());
+            Button btnInstall = CreateButton(I18n.T("Setup_BtnInstall"), true, () => StartInstallation());
             btnInstall.Width = 114;
             btnInstall.Margin = new Thickness(10, 0, 0, 0);
             _bottomBarGrid.Children.Add(btnInstall);
@@ -450,7 +798,7 @@ namespace ScrollIt.Setup
 
             _lblProgressStatus = new TextBlock
             {
-                Text = "Installation de Scroll-it en cours...",
+                Text = I18n.T("Setup_ProgressTitle"),
                 Foreground = TextWhiteBrush,
                 FontSize = 15,
                 FontWeight = FontWeights.Bold,
@@ -474,7 +822,7 @@ namespace ScrollIt.Setup
 
             _lblProgressDetail = new TextBlock
             {
-                Text = "Préparation des fichiers...",
+                Text = I18n.T("Setup_ProgressPrep"),
                 Foreground = TextMutedBrush,
                 FontSize = 11
             };
@@ -482,7 +830,6 @@ namespace ScrollIt.Setup
 
             _mainContentGrid.Children.Add(stack);
 
-            // Run installation on background worker
             string targetFolder = _txtInstallPath.Text.Trim();
             bool makeDesktop = _chkDesktopShortcut.IsChecked == true;
             bool makeStartMenu = _chkStartMenuShortcut.IsChecked == true;
@@ -499,8 +846,7 @@ namespace ScrollIt.Setup
                 {
                     Dispatcher.Invoke(new Action(() =>
                     {
-                        MessageBox.Show("Erreur lors de l'installation : " + ex.Message, "Scroll-it Setup", MessageBoxButton.OK, MessageBoxImage.Error);
-                        ShowStep2();
+                        ShowAlertModal(I18n.T("Setup_ErrorGeneral") + ex.Message, () => ShowStep2());
                     }));
                 }
             });
@@ -508,7 +854,7 @@ namespace ScrollIt.Setup
 
         private void PerformInstall(string installDir, bool makeDesktop, bool makeStartMenu, bool autoStart)
         {
-            UpdateProgress(15, "Arrêt des processus existants...");
+            UpdateProgress(15, I18n.T("Setup_ProgressStopProcesses"));
             foreach (Process p in Process.GetProcessesByName("Scroll-it"))
             {
                 try { p.Kill(); p.WaitForExit(1000); } catch { }
@@ -523,13 +869,13 @@ namespace ScrollIt.Setup
             }
             Thread.Sleep(300);
 
-            UpdateProgress(35, "Création du répertoire d'installation...");
+            UpdateProgress(35, I18n.T("Setup_ProgressCreateDir"));
             if (!Directory.Exists(installDir))
             {
                 Directory.CreateDirectory(installDir);
             }
 
-            UpdateProgress(55, "Extraction des fichiers exécutables et ressources...");
+            UpdateProgress(55, I18n.T("Setup_ProgressExtract"));
             string targetExe = Path.Combine(installDir, "Scroll-it.exe");
             string targetIcon = Path.Combine(installDir, "scroll-it.ico");
             string targetUninstaller = Path.Combine(installDir, "Uninstall.exe");
@@ -537,7 +883,7 @@ namespace ScrollIt.Setup
             // 1. Extract or Copy Scroll-it.exe
             if (!ExtractEmbeddedOrCopy("Scroll-it.exe", targetExe))
             {
-                throw new FileNotFoundException("Impossible d'extraire Scroll-it.exe.");
+                throw new FileNotFoundException(I18n.T("Setup_ErrorExtract"));
             }
 
             // 2. Extract or Copy scroll-it.ico
@@ -565,7 +911,23 @@ namespace ScrollIt.Setup
                 catch { }
             }
 
-            UpdateProgress(75, "Création des raccourcis système...");
+            // 4. Save initial language preference into settings.json
+            try
+            {
+                string appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "scroll-it");
+                if (!Directory.Exists(appDataFolder)) Directory.CreateDirectory(appDataFolder);
+                string settingsPath = Path.Combine(appDataFolder, "settings.json");
+                if (!File.Exists(settingsPath))
+                {
+                    string initialJson = string.Format("{{\"ActivePreset\":\"Mac OS\",\"AnimationTime\":400.0,\"AccelerationMultiplier\":1.4,\"BlacklistedApps\":[],\"BypassCtrlZoom\":true,\"Enabled\":true,\"FrictionTail\":0.95,\"Language\":\"{0}\",\"MinimizeToTrayOnClose\":true,\"StartWithWindows\":{1},\"StepSize\":120.0}}",
+                        I18n.CurrentLanguageCode,
+                        autoStart ? "true" : "false");
+                    File.WriteAllText(settingsPath, initialJson);
+                }
+            }
+            catch { }
+
+            UpdateProgress(75, I18n.T("Setup_ProgressShortcuts"));
             Type shellType = Type.GetTypeFromProgID("WScript.Shell");
             if (shellType != null)
             {
@@ -577,7 +939,7 @@ namespace ScrollIt.Setup
                     dynamic shortcut = shell.CreateShortcut(startMenu);
                     shortcut.TargetPath = targetExe;
                     shortcut.WorkingDirectory = installDir;
-                    shortcut.Description = "Scroll-it - Moteur de Défilement Fluide pour Windows";
+                    shortcut.Description = "Scroll-it - " + I18n.T("AppTagline");
                     shortcut.IconLocation = (File.Exists(targetIcon) ? targetIcon : targetExe) + ",0";
                     shortcut.Save();
                 }
@@ -588,20 +950,20 @@ namespace ScrollIt.Setup
                     dynamic shortcut = shell.CreateShortcut(desktop);
                     shortcut.TargetPath = targetExe;
                     shortcut.WorkingDirectory = installDir;
-                    shortcut.Description = "Scroll-it - Moteur de Défilement Fluide pour Windows";
+                    shortcut.Description = "Scroll-it - " + I18n.T("AppTagline");
                     shortcut.IconLocation = (File.Exists(targetIcon) ? targetIcon : targetExe) + ",0";
                     shortcut.Save();
                 }
             }
 
-            UpdateProgress(90, "Enregistrement dans Windows (Paramètres > Applications)...");
+            UpdateProgress(90, I18n.T("Setup_ProgressRegistry"));
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\Scroll-it"))
             {
                 if (key != null)
                 {
                     key.SetValue("DisplayName", "Scroll-it");
                     key.SetValue("DisplayIcon", (File.Exists(targetIcon) ? targetIcon : targetExe) + ",0");
-                    key.SetValue("DisplayVersion", "1.0.0");
+                    key.SetValue("DisplayVersion", "1.0.1");
                     key.SetValue("Publisher", "Scroll-it");
                     key.SetValue("InstallLocation", installDir);
                     key.SetValue("UninstallString", "\"" + targetUninstaller + "\"");
@@ -622,7 +984,7 @@ namespace ScrollIt.Setup
                 }
             }
 
-            UpdateProgress(100, "Installation terminée avec succès !");
+            UpdateProgress(100, I18n.T("Setup_ProgressComplete"));
             Thread.Sleep(400);
         }
 
@@ -654,7 +1016,7 @@ namespace ScrollIt.Setup
 
             TextBlock finishTitle = new TextBlock
             {
-                Text = "Scroll-it a été installé avec succès !",
+                Text = I18n.T("Setup_FinishTitle"),
                 Foreground = TextWhiteBrush,
                 FontSize = 17,
                 FontWeight = FontWeights.Bold,
@@ -665,7 +1027,7 @@ namespace ScrollIt.Setup
 
             TextBlock finishDesc = new TextBlock
             {
-                Text = "L'application est prête à l'emploi et intégrée à votre système Windows.",
+                Text = I18n.T("Setup_FinishDesc"),
                 Foreground = TextMutedBrush,
                 FontSize = 12,
                 TextAlignment = TextAlignment.Center,
@@ -675,7 +1037,7 @@ namespace ScrollIt.Setup
 
             _chkLaunchAfter = new CheckBox
             {
-                Content = "Lancer Scroll-it maintenant",
+                Content = I18n.T("Setup_ChkLaunchNow"),
                 Foreground = TextWhiteBrush,
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
@@ -687,8 +1049,8 @@ namespace ScrollIt.Setup
 
             _mainContentGrid.Children.Add(center);
 
-            // Finish button (pinned to bottom right)
-            Button btnFinish = CreateButton("Terminer", true, () =>
+            // Finish button
+            Button btnFinish = CreateButton(I18n.T("Setup_BtnFinish"), true, () =>
             {
                 if (_chkLaunchAfter.IsChecked == true)
                 {
@@ -711,7 +1073,6 @@ namespace ScrollIt.Setup
         {
             Canvas canvas = new Canvas { Width = size, Height = size };
 
-            // Outer Circle with dark gradient fill and cyan border
             Ellipse circle = new Ellipse
             {
                 Width = size - 2,
@@ -724,7 +1085,6 @@ namespace ScrollIt.Setup
             Canvas.SetTop(circle, 1);
             canvas.Children.Add(circle);
 
-            // Smooth cyan wave
             System.Windows.Shapes.Path wave = new System.Windows.Shapes.Path
             {
                 Stroke = AccentBrush,
@@ -772,7 +1132,7 @@ namespace ScrollIt.Setup
                 StrokeLineJoin = PenLineJoin.Round,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, -3, 0, 0), // Shifted upward for perfect optical center
+                Margin = new Thickness(0, -3, 0, 0),
                 Data = Geometry.Parse("M 0 13 L 9.5 22.5 L 26.5 2")
             };
             grid.Children.Add(check);
@@ -784,18 +1144,20 @@ namespace ScrollIt.Setup
             Button btn = new Button
             {
                 Content = text,
-                Foreground = TextWhiteBrush,
+                Foreground = isPrimary ? (Brush)Brushes.Black : TextWhiteBrush,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
-                Cursor = System.Windows.Input.Cursors.Hand
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Height = 32
             };
 
             FrameworkElementFactory border = new FrameworkElementFactory(typeof(Border));
+            border.Name = "btnBorder";
             border.SetValue(Border.BackgroundProperty, isPrimary ? (Brush)AccentGradient : CardBgBrush);
             border.SetValue(Border.BorderBrushProperty, isPrimary ? Brushes.Transparent : CardBorderBrush);
             border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(0));
-            border.SetValue(Border.PaddingProperty, new Thickness(16, 8, 16, 8));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            border.SetValue(Border.PaddingProperty, new Thickness(16, 6, 16, 6));
 
             FrameworkElementFactory content = new FrameworkElementFactory(typeof(ContentPresenter));
             content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
@@ -803,6 +1165,19 @@ namespace ScrollIt.Setup
             border.AppendChild(content);
 
             ControlTemplate tpl = new ControlTemplate(typeof(Button));
+
+            Trigger hoverTrigger = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
+            if (isPrimary)
+            {
+                hoverTrigger.Setters.Add(new Setter(Border.OpacityProperty, 0.9, "btnBorder"));
+            }
+            else
+            {
+                hoverTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, AccentBrush, "btnBorder"));
+                hoverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(30, 37, 48)), "btnBorder"));
+            }
+            tpl.Triggers.Add(hoverTrigger);
+
             tpl.VisualTree = border;
             btn.Template = tpl;
 
@@ -846,7 +1221,6 @@ namespace ScrollIt.Setup
                     }
                 }
 
-                // Fallback to local filesystem
                 string currentDir = AppDomain.CurrentDomain.BaseDirectory;
                 string sourceFile = Path.Combine(currentDir, resourceOrFileName);
                 if (!File.Exists(sourceFile)) sourceFile = Path.Combine(currentDir, @"bin\" + resourceOrFileName);

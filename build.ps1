@@ -45,6 +45,7 @@ Start-Sleep -Milliseconds 200
 Write-Host "[1/2] Compilation de Scroll-it-Portable.exe..." -ForegroundColor Yellow
 $mainSources = @(
     (Join-Path $PSScriptRoot "src\AssemblyInfo.cs"),
+    (Join-Path $PSScriptRoot "src\Engine\Localization.cs"),
     (Join-Path $PSScriptRoot "src\Engine\Win32.cs"),
     (Join-Path $PSScriptRoot "src\Engine\SettingsManager.cs"),
     (Join-Path $PSScriptRoot "src\Engine\WebKitMomentumScroller.cs"),
@@ -63,6 +64,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Échec de la compilation de Scroll-it-Po
 # 2. Compile Unified Setup & Uninstaller Wizard (Scroll-it-Setup.exe) - Standalone Self-Contained
 Write-Host "[2/2] Compilation de Scroll-it-Setup.exe (Installateur autonome tout-en-un)..." -ForegroundColor Yellow
 $setupSources = @(
+    (Join-Path $PSScriptRoot "src\Engine\Localization.cs"),
     (Join-Path $PSScriptRoot "src\Setup\UninstallWindow.cs"),
     (Join-Path $PSScriptRoot "src\Setup\SetupWindow.cs"),
     (Join-Path $PSScriptRoot "src\Setup\SetupProgram.cs")

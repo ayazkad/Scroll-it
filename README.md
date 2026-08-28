@@ -9,7 +9,7 @@
 
   <p>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
-      <img src="https://img.shields.io/badge/Release-v1.0.0-00d2ff?style=for-the-badge&logo=github" alt="Latest Release" />
+      <img src="https://img.shields.io/badge/Release-v1.0.1-00d2ff?style=for-the-badge&logo=github" alt="Latest Release" />
     </a>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
       <img src="https://img.shields.io/badge/Downloads-Portable%20%26%20Setup-00f2fe?style=for-the-badge&logo=windows" alt="Downloads" />
@@ -31,6 +31,7 @@
 ## 🌟 Fonctionnalités Principales
 
 - **🌊 Défilement Buttery Smooth** : Remplace les 120 crans rigides de Windows par une interpolation continue à haute fréquence (144Hz / 240Hz).
+- **🌐 Support Multi-langues (v1.0.1)** : Interface complète, installateur, désinstallateur et menu Systray traduits en **Français**, **English** et **Русский** avec basculement dynamique instantané.
 - **🚀 Accélération & Inertie Naturelle** : Plusieurs coups de molette rapides consécutifs accumulent de l'élan pour parcourir de longues pages et documents sans effort pour vos doigts.
 - **🎯 Freinage Instantané** : Dès que vous changez de sens de défilement, l'élan précédent est instantanément stoppé pour une réactivité chirurgicale.
 - **🍏 Profils & Presets en 1 Clic** :
@@ -56,10 +57,11 @@
 ```
 Scroll-it/
 ├── bin/
-│   ├── Scroll-it-Setup.exe       # 🚀 Installateur autonome tout-en-un (Single-File, fonctionne seul sans aucun fichier tiers)
+│   ├── Scroll-it-Setup.exe       # 🚀 Installateur autonome tout-en-un (Single-File, multilingue)
 │   └── Scroll-it-Portable.exe    # ⚡ Version portable prête à l'emploi (sans installation requise)
 ├── src/
 │   ├── Engine/
+│   │   ├── Localization.cs       # 🌐 Moteur d'internationalisation (Français, English, Русский)
 │   │   ├── Win32.cs              # Interop P/Invoke, WH_MOUSE_LL, SendInput, Timer haute précision
 │   │   ├── SettingsManager.cs    # Gestionnaire des paramètres JSON & Registre Windows
 │   │   ├── ScrollPhysics.cs      # Moteur physique d'interpolation et d'inertie
@@ -69,8 +71,8 @@ Scroll-it/
 │   │   ├── TrayManager.cs        # Gestion de l'icône Systray & Menu contextuel
 │   │   └── MainWindow.cs         # Interface WPF moderne avec zone de test en direct
 │   ├── Setup/
-│   │   ├── SetupWindow.cs        # Interface graphique d'installation avec extraction intégrée
-│   │   ├── UninstallWindow.cs    # Assistant de désinstallation
+│   │   ├── SetupWindow.cs        # Interface graphique d'installation avec sélecteur de langue
+│   │   ├── UninstallWindow.cs    # Assistant de désinstallation multilingue
 │   │   └── SetupProgram.cs      # Point d'entrée de l'installateur / désinstallateur
 │   └── Program.cs                # Point d'entrée avec Mutex d'instance unique
 ├── build.ps1                     # Script de compilation PowerShell (via csc.exe)

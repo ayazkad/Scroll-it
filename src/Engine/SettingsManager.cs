@@ -44,6 +44,7 @@ namespace ScrollIt.Engine
         [DataMember] public bool StartWithWindows { get; set; }
         [DataMember] public bool MinimizeToTrayOnClose { get; set; }
         [DataMember] public bool BypassCtrlZoom { get; set; }
+        [DataMember] public string Language { get; set; }
         [DataMember] public List<string> BlacklistedApps { get; set; }
 
         public AppSettings()
@@ -57,6 +58,7 @@ namespace ScrollIt.Engine
             StartWithWindows = false;
             MinimizeToTrayOnClose = true;
             BypassCtrlZoom = true;
+            Language = "auto";
             BlacklistedApps = new List<string>();
         }
     }
@@ -132,6 +134,12 @@ namespace ScrollIt.Engine
                 Current.StepSize = 120.0;
                 Save();
             }
+
+            if (string.IsNullOrEmpty(Current.Language))
+            {
+                Current.Language = "auto";
+            }
+            I18n.SetLanguageByCode(Current.Language);
 
             // Sync Windows startup registry state
             Current.StartWithWindows = IsAutoStartEnabled();
