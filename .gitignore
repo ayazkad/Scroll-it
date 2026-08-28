@@ -1,0 +1,25 @@
+# Visual Studio / VS Code / Rider
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build Results (optionnel si vous compilez via build.ps1)
+[Dd]ebug/
+[Rr]elease/
+bin/
+obj/
+*.pdb
+*.exe
+
+# Windows system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs
+*.log
