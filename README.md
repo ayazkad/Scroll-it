@@ -8,14 +8,13 @@
   <p><strong>Défilement ultra-fluide type macOS pour Windows • Moteur physique haute fréquence (144Hz / 240Hz)</strong></p>
 
   <p>
-    <a href="https://github.com/ayazkad/Scroll-it/releases/latest">
-      <img src="https://img.shields.io/github/v/release/ayazkad/Scroll-it?style=for-the-badge&color=00d2ff&label=Release&logo=github" alt="Latest Release" />
+    <a href="https://github.com/ayazkad/Scroll-it/releases">
+      <img src="https://img.shields.io/badge/Release-v1.0.0-00d2ff?style=for-the-badge&logo=github" alt="Latest Release" />
     </a>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
-      <img src="https://img.shields.io/github/downloads/ayazkad/Scroll-it/total?style=for-the-badge&color=00f2fe&label=Downloads" alt="Downloads" />
+      <img src="https://img.shields.io/badge/Downloads-Portable%20%26%20Setup-00f2fe?style=for-the-badge&logo=windows" alt="Downloads" />
     </a>
     <img src="https://img.shields.io/badge/Windows-7%20%7C%208%20%7C%2010%20%7C%2011-0080ff?style=for-the-badge&logo=windows&logoColor=white" alt="Windows Support" />
-    <img src="https://img.shields.io/badge/C%23%20%2F%20WPF-Native%20.NET-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET WPF" />
     <img src="https://img.shields.io/badge/License-MIT-00c853?style=for-the-badge" alt="License" />
   </p>
 
