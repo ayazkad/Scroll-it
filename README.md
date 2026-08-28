@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="assets/banner.png" alt="Scroll-It Banner" width="800" />
+  <img src="https://github.com/user-attachments/assets/941a67fa-f2c1-422c-93d5-ba8f91d0f2af" alt="Scroll-It Banner" width="800" />
 
   <br/><br/>
 
