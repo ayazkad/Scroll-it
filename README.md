@@ -33,11 +33,10 @@
 ## 📁 Structure du Projet
 
 ```
-Smooth Scroll/
+Scroll-it/
 ├── bin/
 │   ├── Scroll-it-Setup.exe       # 🚀 Installateur autonome tout-en-un (Single-File, fonctionne seul sans aucun fichier tiers)
-│   ├── Scroll-it-Portable.exe    # ⚡ Version portable prête à l'emploi (sans installation requise)
-│   └── Scroll-it.exe             # ⚡ Exécutable principal (Moteur physique + Interface verre sombre)
+│   └── Scroll-it-Portable.exe    # ⚡ Version portable prête à l'emploi (sans installation requise)
 ├── src/
 │   ├── Engine/
 │   │   ├── Win32.cs              # Interop P/Invoke, WH_MOUSE_LL, SendInput, Timer haute précision
@@ -62,7 +61,7 @@ Smooth Scroll/
 ## 🚀 Lancement & Utilisation
 
 ### Lancer l'application :
-- **Sans installation (Portable)** : Double-cliquez directement sur `bin\Scroll-it-Portable.exe` (ou `Scroll-it.exe`).
+- **Sans installation (Portable)** : Double-cliquez directement sur `bin\Scroll-it-Portable.exe`.
 - **Installer dans Windows** : Double-cliquez sur `bin\Scroll-it-Setup.exe` (vous pouvez le déplacer où vous voulez, il contient tout ce qu'il faut en interne).
 
 ### Recompiler le projet :
