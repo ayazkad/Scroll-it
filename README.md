@@ -5,8 +5,8 @@
   <br/><br/>
 
   <h1>⚡ Scroll-It</h1>
-  <p><strong>Ultra-smooth macOS-like scrolling engine for Windows • High-frequency physics (144Hz / 240Hz)</strong></p>
-  <p><em>Défilement ultra-fluide type macOS pour Windows • Moteur physique haute fréquence (144Hz / 240Hz)</em></p>
+  <p><strong>Ultra-smooth macOS-like scrolling engine for Windows • High-frequency physics</strong></p>
+  <p><em>Défilement ultra-fluide type macOS pour Windows • Moteur physique haute fréquence</em></p>
 
   <p>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
@@ -40,7 +40,7 @@
 
 ### 🌟 Key Features
 
-- **🌊 Buttery-Smooth Scrolling**: Replaces rigid 120-unit discrete notches with continuous high-refresh-rate interpolation (144Hz / 240Hz).
+- **🌊 Buttery-Smooth Scrolling**: Replaces rigid 120-unit discrete notches with continuous, fluid physics interpolation on any display.
 - **↔️ Smooth Horizontal Scrolling (`Shift + Wheel`)**: Full horizontal physics support with instant, clean stop when releasing the `Shift` key.
 - **🛡️ Smart Tab & Focus Protection**: Cancels momentum immediately on mouse clicks or navigation shortcuts (`Ctrl+Tab`, `Alt+Tab`, etc.) to prevent buffered scroll dumps when returning to tabs.
 - **🌐 Full Multi-Language Support**: Complete UI, Installer, Uninstaller, and Systray menu localized in **English**, **French**, and **Russian** with instant live switching.
@@ -117,7 +117,7 @@ Custom preferences and blacklisted apps are automatically saved in:
 
 ### 🌟 Fonctionnalités Principales
 
-- **🌊 Défilement Buttery Smooth** : Remplace les 120 crans rigides de Windows par une interpolation continue à haute fréquence (144Hz / 240Hz).
+- **🌊 Défilement Buttery Smooth** : Remplace les 120 crans rigides de Windows par une interpolation continue et fluide quel que soit votre écran.
 - **↔️ Défilement Horizontal Fluide (`Shift + Molette`)** : Prise en charge physique complète avec arrêt net instantané au relâchement de la touche `Shift`.
 - **🛡️ Protection des Onglets & Focus** : Annulation instantanée de l'inertie lors d'un clic de souris ou d'un raccourci (`Ctrl+Tab`, `Alt+Tab`, etc.) pour éviter tout déversement de scroll au retour sur un onglet.
 - **🌐 Support Multi-langues** : Interface complète, installateur, désinstallateur et menu Systray traduits en **Français**, **English** et **Русский** avec basculement dynamique instantané.
