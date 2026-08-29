@@ -15,7 +15,9 @@ namespace ScrollIt.Engine
         // Window & Target Latching State
         private static IntPtr _latchedHwnd = IntPtr.Zero;
         private static IntPtr _targetRootHwnd = IntPtr.Zero;
+        private static IntPtr _initialForegroundRoot = IntPtr.Zero;
         private static Win32.POINT _latchedPoint;
+        private static bool _isShiftHorizontal = false;
 
         // Vertical Velocity & State (WebKit Momentum)
         private static double _velocityY = 0.0; // px/ms
@@ -33,10 +35,10 @@ namespace ScrollIt.Engine
         private static double _lastWheelDirectionX = 0.0;
         private static double _currentAccelX = 1.0;
 
-        // Constantes physiques
+        // Constantes physiques haute fréquence (144Hz - 240Hz)
         public const double WebKitFriction = 0.998;
-        public const double CutoffVelocity = 0.008; // Seuil idéal : coupe dès que le mouvement descend sous ~1 px/frame à 120 Hz
-        private const int TargetFrameTimeMs = 8;     // Cadencement fluide à 120 Hz
+        public const double CutoffVelocity = 0.005; // Seuil de coupure précis adapté aux écrans 144Hz/240Hz
+        private const int TargetFrameTimeMs = 4;     // Cadencement ultra-rapide jusqu'à 240 Hz (DWM V-Sync natif)
 
         // Win32 Modifier Keys pour wParam
         private const ushort MK_CONTROL = 0x0008;
@@ -62,6 +64,14 @@ namespace ScrollIt.Engine
             _isRunning = false;
             _wakeEvent.Set();
             Win32.TimeEndPeriod(1);
+        }
+
+        public static void Stop()
+        {
+            lock (_syncLock)
+            {
+                ResetPhysicsState();
+            }
         }
 
         public static void OnMouseMove()
@@ -122,6 +132,10 @@ namespace ScrollIt.Engine
 
                     _latchedHwnd = targetHwnd;
                     _targetRootHwnd = rootHwnd;
+
+                    IntPtr fg = Win32.GetForegroundWindow();
+                    IntPtr fgRoot = Win32.GetAncestor(fg, Win32.GA_ROOT);
+                    _initialForegroundRoot = (fgRoot != IntPtr.Zero) ? fgRoot : fg;
                 }
 
                 // Le point d'impact physique est TOUJOURS rafraîchi lors d'un vrai coup de molette
@@ -131,6 +145,14 @@ namespace ScrollIt.Engine
 
                 if (!isHorizontal)
                 {
+                    _isShiftHorizontal = false;
+
+                    // Annuler tout mouvement horizontal lors d'un scroll vertical
+                    _velocityX = 0.0;
+                    _subPixelX = 0.0;
+                    _currentAccelX = 1.0;
+                    _lastWheelDirectionX = 0.0;
+
                     bool isReversal = (_lastWheelDirectionY != 0 && _lastWheelDirectionY != direction);
 
                     if (isReversal)
@@ -160,6 +182,14 @@ namespace ScrollIt.Engine
                 }
                 else
                 {
+                    _isShiftHorizontal = Win32.IsShiftPressed();
+
+                    // Annuler tout mouvement vertical lors d'un scroll horizontal
+                    _velocityY = 0.0;
+                    _subPixelY = 0.0;
+                    _currentAccelY = 1.0;
+                    _lastWheelDirectionY = 0.0;
+
                     bool isReversal = (_lastWheelDirectionX != 0 && _lastWheelDirectionX != direction);
 
                     if (isReversal)
@@ -207,6 +237,59 @@ namespace ScrollIt.Engine
                 {
                     _wakeEvent.WaitOne(20);
                     continue;
+                }
+
+                // Arrêt immédiat de l'inertie en cours si Ctrl ou Alt est pressé (zoom, raccourci, menu)
+                if (Win32.IsCtrlPressed() || Win32.IsAltPressed())
+                {
+                    lock (_syncLock)
+                    {
+                        ResetPhysicsState();
+                    }
+                    continue;
+                }
+
+                // Si Shift est pressé en vol pendant un scroll vertical, couper immédiatement le scroll vertical
+                lock (_syncLock)
+                {
+                    if (Win32.IsShiftPressed() && _velocityY != 0.0)
+                    {
+                        _velocityY = 0.0;
+                        _subPixelY = 0.0;
+                    }
+
+                    // Si le scroll horizontal a été initié avec Shift et que Shift est relâché, couper immédiatement le scroll horizontal
+                    if (_isShiftHorizontal && !Win32.IsShiftPressed() && _velocityX != 0.0)
+                    {
+                        _velocityX = 0.0;
+                        _subPixelX = 0.0;
+                        _currentAccelX = 1.0;
+                        _lastWheelDirectionX = 0.0;
+                        _isShiftHorizontal = false;
+                    }
+                }
+
+                // Vérification de changement d'application / fenêtre de premier plan
+                lock (_syncLock)
+                {
+                    if (_initialForegroundRoot != IntPtr.Zero)
+                    {
+                        IntPtr curFg = Win32.GetForegroundWindow();
+                        IntPtr curFgRoot = Win32.GetAncestor(curFg, Win32.GA_ROOT);
+                        if (curFgRoot == IntPtr.Zero) curFgRoot = curFg;
+
+                        if (curFgRoot != _initialForegroundRoot)
+                        {
+                            ResetPhysicsState();
+                            continue;
+                        }
+                    }
+
+                    if (_latchedHwnd != IntPtr.Zero && !Win32.IsWindow(_latchedHwnd))
+                    {
+                        ResetPhysicsState();
+                        continue;
+                    }
                 }
 
                 // Synchronisation V-Sync matérielle via DWM (60, 120, 144, 240 Hz)
@@ -299,6 +382,7 @@ namespace ScrollIt.Engine
                     {
                         _latchedHwnd = IntPtr.Zero;
                         _targetRootHwnd = IntPtr.Zero;
+                        _initialForegroundRoot = IntPtr.Zero;
                     }
                 }
 
@@ -317,14 +401,27 @@ namespace ScrollIt.Engine
 
         private static void DispatchWheelInput(int delta, bool isHorizontal, IntPtr hwnd, Win32.POINT pt)
         {
-            ushort keys = 0;
-            if (Win32.IsCtrlPressed()) keys |= MK_CONTROL;
-            if (Win32.IsShiftPressed()) keys |= MK_SHIFT;
+            if (Win32.IsCtrlPressed() || Win32.IsAltPressed())
+            {
+                Stop();
+                return;
+            }
+
+            if (!isHorizontal && Win32.IsShiftPressed())
+            {
+                return;
+            }
 
             if (hwnd != IntPtr.Zero)
             {
+                if (!Win32.IsWindow(hwnd))
+                {
+                    Stop();
+                    return;
+                }
+
                 uint msg = isHorizontal ? (uint)Win32.WM_MOUSEHWHEEL : (uint)Win32.WM_MOUSEWHEEL;
-                IntPtr wParam = Win32.MakeWParam((short)delta, keys);
+                IntPtr wParam = Win32.MakeWParam((short)delta, 0);
                 IntPtr lParam = Win32.MakeLParam(pt.x, pt.y);
 
                 if (Win32.PostMessage(hwnd, msg, wParam, lParam))
@@ -360,6 +457,8 @@ namespace ScrollIt.Engine
 
             _latchedHwnd = IntPtr.Zero;
             _targetRootHwnd = IntPtr.Zero;
+            _initialForegroundRoot = IntPtr.Zero;
+            _isShiftHorizontal = false;
         }
 
         private static readonly int MarshalSize = Marshal.SizeOf(typeof(Win32.INPUT));

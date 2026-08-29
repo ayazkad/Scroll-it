@@ -24,6 +24,18 @@ namespace ScrollIt.UI
         private static readonly Dictionary<string, ImageSource> _iconCache = new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
         private static ImageSource _defaultAppIcon = null;
 
+        static MainWindow()
+        {
+            try
+            {
+                Timeline.DesiredFrameRateProperty.OverrideMetadata(
+                    typeof(Timeline),
+                    new FrameworkPropertyMetadata(144)
+                );
+            }
+            catch { }
+        }
+
         // Sliders & Text Blocks
         private Slider _stepSlider;
         private TextBlock _stepValText;
@@ -98,8 +110,19 @@ namespace ScrollIt.UI
         private Popup _langPopup;
         private CheckBox _chkAutoStart;
         private CheckBox _chkCtrlZoom;
+        private CheckBox _chkReverseDirection;
         private CheckBox _chkMinimizeToTray;
         private Button _btnResetDefaults;
+
+        // Update Checker
+        private TextBlock _updateTitle;
+        private TextBlock _updateVersionText;
+        private FrameworkElement _updateSpinner;
+        private RotateTransform _spinnerRotate;
+        private TextBlock _updateStatusText;
+        private Button _btnCheckUpdate;
+        private Button _btnDownloadUpdate;
+        private string _latestReleaseUrl = UpdateChecker.DefaultReleasesPage;
 
         // Container & Window Controls
         private Border _mainContainer;
@@ -117,6 +140,9 @@ namespace ScrollIt.UI
 
             SettingsManager.SettingsChanged += OnSettingsUpdated;
             I18n.LanguageChanged += OnLanguageUpdated;
+
+            // Silent update check in background after window loads
+            Loaded += (s, e) => PerformUpdateCheck(false);
         }
 
         private void InitializeWindow()
@@ -912,20 +938,15 @@ namespace ScrollIt.UI
                 if (v != null && v != newView)
                 {
                     v.BeginAnimation(UIElement.OpacityProperty, null);
-                    TranslateTransform trans = v.RenderTransform as TranslateTransform;
-                    if (trans != null)
+                    TranslateTransform t = v.RenderTransform as TranslateTransform;
+                    if (t != null)
                     {
-                        trans.BeginAnimation(TranslateTransform.XProperty, null);
-                        trans.X = 0;
+                        t.BeginAnimation(TranslateTransform.XProperty, null);
+                        t.X = 0;
                     }
                     v.Opacity = 0.0;
                     v.Visibility = Visibility.Collapsed;
                 }
-            }
-
-            if (!_tabContentContainer.Children.Contains(newView))
-            {
-                _tabContentContainer.Children.Add(newView);
             }
 
             TranslateTransform newTrans = newView.RenderTransform as TranslateTransform;
@@ -935,34 +956,32 @@ namespace ScrollIt.UI
                 newView.RenderTransform = newTrans;
             }
 
-            newView.BeginAnimation(UIElement.OpacityProperty, null);
-            newTrans.BeginAnimation(TranslateTransform.XProperty, null);
+            double enterOffset = slideFromRight ? 16.0 : -16.0;
 
-            double enterX = slideFromRight ? 35.0 : -35.0;
-            newTrans.X = enterX;
+            newTrans.BeginAnimation(TranslateTransform.XProperty, null);
+            newView.BeginAnimation(UIElement.OpacityProperty, null);
+
+            newTrans.X = enterOffset;
             newView.Opacity = 0.0;
             newView.Visibility = Visibility.Visible;
 
-            QuarticEase ease = new QuarticEase { EasingMode = EasingMode.EaseOut };
-            TimeSpan duration = TimeSpan.FromMilliseconds(220);
+            CubicEase ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            TimeSpan duration = TimeSpan.FromMilliseconds(180);
 
-            DoubleAnimation enterSlide = new DoubleAnimation(enterX, 0.0, duration) { EasingFunction = ease };
-            DoubleAnimation enterFade = new DoubleAnimation(0.0, 1.0, duration) { EasingFunction = ease };
-
-            enterSlide.Completed += (s, e) =>
+            DoubleAnimation slideAnim = new DoubleAnimation(enterOffset, 0.0, duration)
             {
-                newTrans.BeginAnimation(TranslateTransform.XProperty, null);
-                newTrans.X = 0;
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.HoldEnd
             };
 
-            enterFade.Completed += (s, e) =>
+            DoubleAnimation fadeAnim = new DoubleAnimation(0.0, 1.0, duration)
             {
-                newView.BeginAnimation(UIElement.OpacityProperty, null);
-                newView.Opacity = 1.0;
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.HoldEnd
             };
 
-            newTrans.BeginAnimation(TranslateTransform.XProperty, enterSlide);
-            newView.BeginAnimation(UIElement.OpacityProperty, enterFade);
+            newTrans.BeginAnimation(TranslateTransform.XProperty, slideAnim);
+            newView.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
         }
 
         private FrameworkElement BuildPhysicsView()
@@ -1973,6 +1992,20 @@ namespace ScrollIt.UI
             _chkCtrlZoom.Unchecked += (s, e) => { SettingsManager.Current.BypassCtrlZoom = false; SettingsManager.Save(); };
             cStack.Children.Add(_chkCtrlZoom);
 
+            // Reverse Direction (Natural Scrolling) CheckBox
+            _chkReverseDirection = new CheckBox
+            {
+                Content = I18n.T("Options_ReverseDirection"),
+                Foreground = Styles.TextWhiteBrush,
+                FontSize = 13,
+                Margin = new Thickness(0, 0, 0, 16),
+                IsChecked = SettingsManager.Current.ReverseDirection,
+                Cursor = Cursors.Hand
+            };
+            _chkReverseDirection.Checked += (s, e) => { SettingsManager.Current.ReverseDirection = true; SettingsManager.Save(); };
+            _chkReverseDirection.Unchecked += (s, e) => { SettingsManager.Current.ReverseDirection = false; SettingsManager.Save(); };
+            cStack.Children.Add(_chkReverseDirection);
+
             // Minimize to tray on close
             _chkMinimizeToTray = new CheckBox
             {
@@ -1992,8 +2025,10 @@ namespace ScrollIt.UI
             _btnResetDefaults.Click += (s, e) =>
             {
                 SettingsManager.Current.BypassCtrlZoom = true;
+                SettingsManager.Current.ReverseDirection = false;
                 SettingsManager.Current.MinimizeToTrayOnClose = true;
                 if (_chkCtrlZoom != null) _chkCtrlZoom.IsChecked = true;
+                if (_chkReverseDirection != null) _chkReverseDirection.IsChecked = false;
                 if (_chkMinimizeToTray != null) _chkMinimizeToTray.IsChecked = true;
                 SelectPreset("Mac OS", true);
             };
@@ -2001,6 +2036,89 @@ namespace ScrollIt.UI
 
             card.Child = cStack;
             stack.Children.Add(card);
+
+            // Updates Glass Card
+            Border updateCard = Styles.CreateGlassCard(16, 12);
+            updateCard.Margin = new Thickness(0, 14, 0, 0);
+
+            StackPanel updateStack = new StackPanel();
+
+            _updateTitle = new TextBlock
+            {
+                Text = I18n.T("Update_CardTitle"),
+                Foreground = Styles.TextWhiteBrush,
+                FontWeight = FontWeights.Bold,
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            updateStack.Children.Add(_updateTitle);
+
+            Grid updateGrid = new Grid();
+            updateGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            updateGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            StackPanel updateInfoPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+
+            _updateVersionText = new TextBlock
+            {
+                Text = I18n.T("Update_VersionLabel", UpdateChecker.CurrentVersion),
+                Foreground = Styles.TextMutedBrush,
+                FontSize = 12
+            };
+            updateInfoPanel.Children.Add(_updateVersionText);
+
+            StackPanel statusRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+
+            _updateSpinner = CreateWheelSpinner();
+            _updateSpinner.Visibility = Visibility.Collapsed;
+            statusRow.Children.Add(_updateSpinner);
+
+            _updateStatusText = new TextBlock
+            {
+                Text = "",
+                Foreground = Styles.SuccessBrush,
+                FontSize = 12,
+                FontWeight = FontWeights.Medium,
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Collapsed
+            };
+            statusRow.Children.Add(_updateStatusText);
+
+            updateInfoPanel.Children.Add(statusRow);
+
+            updateGrid.Children.Add(updateInfoPanel);
+            Grid.SetColumn(updateInfoPanel, 0);
+
+            StackPanel updateBtns = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+            _btnCheckUpdate = Styles.CreatePillButton(I18n.T("Update_CheckBtn"), false);
+            _btnCheckUpdate.Margin = new Thickness(0, 0, 8, 0);
+            _btnCheckUpdate.Click += (s, e) => PerformUpdateCheck(true);
+            updateBtns.Children.Add(_btnCheckUpdate);
+
+            _btnDownloadUpdate = Styles.CreatePillButton(I18n.T("Update_DownloadBtn"), true);
+            _btnDownloadUpdate.Visibility = Visibility.Collapsed;
+            _btnDownloadUpdate.Click += (s, e) =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(_latestReleaseUrl) { UseShellExecute = true });
+                }
+                catch { }
+            };
+            updateBtns.Children.Add(_btnDownloadUpdate);
+
+            updateGrid.Children.Add(updateBtns);
+            Grid.SetColumn(updateBtns, 1);
+
+            updateStack.Children.Add(updateGrid);
+            updateCard.Child = updateStack;
+            stack.Children.Add(updateCard);
 
             Button btnDonateOpt = CreateDonatePillButton(out _btnDonateTextOpt);
             stack.Children.Add(btnDonateOpt);
@@ -2133,8 +2251,13 @@ namespace ScrollIt.UI
             if (_optLangTitle != null) _optLangTitle.Text = I18n.T("Options_LanguageTitle");
             if (_chkAutoStart != null) _chkAutoStart.Content = I18n.T("Options_AutoStart");
             if (_chkCtrlZoom != null) _chkCtrlZoom.Content = I18n.T("Options_CtrlZoom");
+            if (_chkReverseDirection != null) _chkReverseDirection.Content = I18n.T("Options_ReverseDirection");
             if (_chkMinimizeToTray != null) _chkMinimizeToTray.Content = I18n.T("Options_MinimizeToTray");
             if (_btnResetDefaults != null) _btnResetDefaults.Content = I18n.T("Options_ResetDefaults");
+            if (_updateTitle != null) _updateTitle.Text = I18n.T("Update_CardTitle");
+            if (_updateVersionText != null) _updateVersionText.Text = I18n.T("Update_VersionLabel", UpdateChecker.CurrentVersion);
+            if (_btnCheckUpdate != null) _btnCheckUpdate.Content = I18n.T("Update_CheckBtn");
+            if (_btnDownloadUpdate != null) _btnDownloadUpdate.Content = I18n.T("Update_DownloadBtn");
             if (_btnDonateText != null) _btnDonateText.Text = I18n.T("Btn_Donate");
             if (_btnDonateTextOpt != null) _btnDonateTextOpt.Text = I18n.T("Btn_Donate");
 
@@ -2242,6 +2365,7 @@ namespace ScrollIt.UI
 
             if (_chkAutoStart != null) _chkAutoStart.IsChecked = cfg.StartWithWindows;
             if (_chkCtrlZoom != null) _chkCtrlZoom.IsChecked = cfg.BypassCtrlZoom;
+            if (_chkReverseDirection != null) _chkReverseDirection.IsChecked = cfg.ReverseDirection;
             if (_chkMinimizeToTray != null) _chkMinimizeToTray.IsChecked = cfg.MinimizeToTrayOnClose;
 
             foreach (var pair in _presetButtons)
@@ -2436,6 +2560,131 @@ namespace ScrollIt.UI
                 LoadSettingsToUI(false);
                 TrayManager.UpdateState();
             }));
+        }
+
+        private FrameworkElement CreateWheelSpinner()
+        {
+            Grid container = new Grid
+            {
+                Width = 14,
+                Height = 14,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            System.Windows.Shapes.Path arc = new System.Windows.Shapes.Path
+            {
+                Stroke = Styles.AccentBrush,
+                StrokeThickness = 2.0,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                Data = Geometry.Parse("M 7,1 A 6,6 0 0 1 13,7")
+            };
+
+            _spinnerRotate = new RotateTransform(0, 7, 7);
+            arc.RenderTransform = _spinnerRotate;
+
+            container.Children.Add(arc);
+            return container;
+        }
+
+        private void StartSpinnerAnimation()
+        {
+            if (_spinnerRotate == null) return;
+            DoubleAnimation rotateAnim = new DoubleAnimation
+            {
+                From = 0,
+                To = 360,
+                Duration = TimeSpan.FromMilliseconds(750),
+                RepeatBehavior = RepeatBehavior.Forever
+            };
+            _spinnerRotate.BeginAnimation(RotateTransform.AngleProperty, rotateAnim);
+        }
+
+        private void StopSpinnerAnimation()
+        {
+            if (_spinnerRotate == null) return;
+            _spinnerRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+        }
+
+        private void PerformUpdateCheck(bool isManual)
+        {
+            if (_btnCheckUpdate != null) _btnCheckUpdate.IsEnabled = false;
+            if (_btnDownloadUpdate != null) _btnDownloadUpdate.Visibility = Visibility.Collapsed;
+
+            if (_updateStatusText != null)
+            {
+                _updateStatusText.Visibility = Visibility.Visible;
+                _updateStatusText.Foreground = Styles.TextMutedBrush;
+                _updateStatusText.Text = I18n.T("Update_Checking");
+            }
+
+            if (_updateSpinner != null)
+            {
+                _updateSpinner.Visibility = Visibility.Visible;
+                StartSpinnerAnimation();
+            }
+
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                UpdateInfo info = UpdateChecker.CheckForUpdates();
+
+                // Délai fluide de 1.5 seconde avec animation de la molette pour la vérification manuelle
+                if (isManual)
+                {
+                    int elapsed = (int)sw.ElapsedMilliseconds;
+                    int remaining = 1500 - elapsed;
+                    if (remaining > 0)
+                    {
+                        System.Threading.Thread.Sleep(remaining);
+                    }
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_updateSpinner != null)
+                    {
+                        StopSpinnerAnimation();
+                        _updateSpinner.Visibility = Visibility.Collapsed;
+                    }
+
+                    if (_btnCheckUpdate != null) _btnCheckUpdate.IsEnabled = true;
+                    if (_updateStatusText == null) return;
+
+                    if (info.IsSuccess)
+                    {
+                        if (info.HasUpdate)
+                        {
+                            _latestReleaseUrl = !string.IsNullOrEmpty(info.ReleaseUrl) ? info.ReleaseUrl : UpdateChecker.DefaultReleasesPage;
+                            _updateStatusText.Visibility = Visibility.Visible;
+                            _updateStatusText.Foreground = new SolidColorBrush(Styles.AccentPrimary);
+                            _updateStatusText.Text = I18n.T("Update_Available", info.LatestVersion);
+                            if (_btnDownloadUpdate != null) _btnDownloadUpdate.Visibility = Visibility.Visible;
+                        }
+                        else
+                        {
+                            _updateStatusText.Visibility = Visibility.Visible;
+                            _updateStatusText.Foreground = Styles.SuccessBrush;
+                            _updateStatusText.Text = I18n.T("Update_UpToDate", UpdateChecker.CurrentVersion);
+                            if (_btnDownloadUpdate != null) _btnDownloadUpdate.Visibility = Visibility.Collapsed;
+                        }
+                    }
+                    else
+                    {
+                        if (isManual)
+                        {
+                            _updateStatusText.Visibility = Visibility.Visible;
+                            _updateStatusText.Foreground = new SolidColorBrush(Styles.DangerRed);
+                            _updateStatusText.Text = I18n.T("Update_Error");
+                        }
+                        else
+                        {
+                            _updateStatusText.Visibility = Visibility.Collapsed;
+                        }
+                    }
+                }));
+            });
         }
     }
 }

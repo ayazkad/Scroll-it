@@ -9,6 +9,14 @@ namespace ScrollIt.Engine
     {
         public const int WH_MOUSE_LL = 14;
         public const int WM_MOUSEMOVE = 0x0200;
+        public const int WM_LBUTTONDOWN = 0x0201;
+        public const int WM_LBUTTONUP = 0x0202;
+        public const int WM_RBUTTONDOWN = 0x0204;
+        public const int WM_RBUTTONUP = 0x0205;
+        public const int WM_MBUTTONDOWN = 0x0207;
+        public const int WM_MBUTTONUP = 0x0208;
+        public const int WM_XBUTTONDOWN = 0x020B;
+        public const int WM_XBUTTONUP = 0x020C;
         public const int WM_MOUSEWHEEL = 0x020A;
         public const int WM_MOUSEHWHEEL = 0x020E;
         public const int WHEEL_DELTA = 120;
@@ -16,9 +24,13 @@ namespace ScrollIt.Engine
         // Custom signature flag used in dwExtraInfo to identify synthesized smooth scroll events
         public static readonly UIntPtr SCROLL_IT_SIGNATURE = new UIntPtr(0x5343524C); // 'SCRL' in ASCII
 
-        public const int VK_CONTROL = 0x11;
+        public const int VK_TAB = 0x09;
         public const int VK_SHIFT = 0x10;
+        public const int VK_CONTROL = 0x11;
         public const int VK_MENU = 0x12; // Alt
+        public const int VK_ESCAPE = 0x1B;
+        public const int VK_PRIOR = 0x21; // Page Up
+        public const int VK_NEXT = 0x22;  // Page Down
 
         public const uint INPUT_MOUSE = 0;
         public const uint MOUSEEVENTF_WHEEL = 0x0800;
@@ -162,6 +174,10 @@ namespace ScrollIt.Engine
 
         [DllImport("user32.dll")]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();

@@ -51,6 +51,7 @@ $mainSources = @(
     (Join-Path $PSScriptRoot "src\Engine\WebKitMomentumScroller.cs"),
     (Join-Path $PSScriptRoot "src\Engine\ScrollPhysics.cs"),
     (Join-Path $PSScriptRoot "src\Engine\MouseHook.cs"),
+    (Join-Path $PSScriptRoot "src\Engine\UpdateChecker.cs"),
     (Join-Path $PSScriptRoot "src\UI\Styles.cs"),
     (Join-Path $PSScriptRoot "src\UI\TrayManager.cs"),
     (Join-Path $PSScriptRoot "src\UI\MainWindow.cs"),

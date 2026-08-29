@@ -9,7 +9,7 @@
 
   <p>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
-      <img src="https://img.shields.io/badge/Release-v1.0.1-00d2ff?style=for-the-badge&logo=github" alt="Latest Release" />
+      <img src="https://img.shields.io/badge/Release-v1.1.0-00d2ff?style=for-the-badge&logo=github" alt="Latest Release" />
     </a>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
       <img src="https://img.shields.io/badge/Downloads-Portable%20%26%20Setup-00f2fe?style=for-the-badge&logo=windows" alt="Downloads" />
@@ -31,7 +31,7 @@
 ## 🌟 Fonctionnalités Principales
 
 - **🌊 Défilement Buttery Smooth** : Remplace les 120 crans rigides de Windows par une interpolation continue à haute fréquence (144Hz / 240Hz).
-- **🌐 Support Multi-langues (v1.0.1)** : Interface complète, installateur, désinstallateur et menu Systray traduits en **Français**, **English** et **Русский** avec basculement dynamique instantané.
+- **🌐 Support Multi-langues** : Interface complète, installateur, désinstallateur et menu Systray traduits en **Français**, **English** et **Русский** avec basculement dynamique instantané.
 - **🚀 Accélération & Inertie Naturelle** : Plusieurs coups de molette rapides consécutifs accumulent de l'élan pour parcourir de longues pages et documents sans effort pour vos doigts.
 - **🎯 Freinage Instantané** : Dès que vous changez de sens de défilement, l'élan précédent est instantanément stoppé pour une réactivité chirurgicale.
 - **🍏 Profils & Presets en 1 Clic** :

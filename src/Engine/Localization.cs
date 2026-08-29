@@ -292,6 +292,11 @@ namespace ScrollIt.Engine
                 { AppLanguage.English, "🔍 Preserve native Ctrl + Wheel zoom (precise zoom without interpolation)" },
                 { AppLanguage.Russian, "🔍 Сохранять стандартный зум Ctrl + Колесико (точный зум без интерполяции)" }
             }},
+            { "Options_ReverseDirection", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "🔄 Défilement naturel (sens de la molette inversé type tactile / macOS)" },
+                { AppLanguage.English, "🔄 Natural scrolling (invert mouse wheel direction like touch / macOS)" },
+                { AppLanguage.Russian, "🔄 Естественная прокрутка (инвертировать направление колесика)" }
+            }},
             { "Options_MinimizeToTray", new Dictionary<AppLanguage, string> {
                 { AppLanguage.French, "📥 Réduire dans la barre des tâches (Systray) lors de la fermeture" },
                 { AppLanguage.English, "📥 Minimize to system tray on close" },
@@ -301,6 +306,48 @@ namespace ScrollIt.Engine
                 { AppLanguage.French, "↺ Réinitialiser tous les réglages par défaut" },
                 { AppLanguage.English, "↺ Reset all settings to defaults" },
                 { AppLanguage.Russian, "↺ Сбросить все настройки по умолчанию" }
+            }},
+
+            // === Update Checker ===
+            { "Update_CardTitle", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Mises à jour de Scroll-it" },
+                { AppLanguage.English, "Scroll-it Updates" },
+                { AppLanguage.Russian, "Обновления Scroll-it" }
+            }},
+            { "Update_VersionLabel", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Version installée : v{0}" },
+                { AppLanguage.English, "Installed Version: v{0}" },
+                { AppLanguage.Russian, "Установленная версия: v{0}" }
+            }},
+            { "Update_CheckBtn", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "🔄 Vérifier les mises à jour" },
+                { AppLanguage.English, "🔄 Check for Updates" },
+                { AppLanguage.Russian, "🔄 Проверить обновления" }
+            }},
+            { "Update_Checking", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Vérification en cours..." },
+                { AppLanguage.English, "Checking for updates..." },
+                { AppLanguage.Russian, "Проверка обновлений..." }
+            }},
+            { "Update_UpToDate", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "✓ Vous utilisez la dernière version (v{0})" },
+                { AppLanguage.English, "✓ You are using the latest version (v{0})" },
+                { AppLanguage.Russian, "✓ Вы используете последнюю версию (v{0})" }
+            }},
+            { "Update_Available", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "🎉 Nouvelle version v{0} disponible !" },
+                { AppLanguage.English, "🎉 New version v{0} is available!" },
+                { AppLanguage.Russian, "🎉 Доступна новая версия v{0}!" }
+            }},
+            { "Update_DownloadBtn", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "⬇ Télécharger la mise à jour" },
+                { AppLanguage.English, "⬇ Download Update" },
+                { AppLanguage.Russian, "⬇ Скачать обновление" }
+            }},
+            { "Update_Error", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Impossible de vérifier les mises à jour (vérifiez votre connexion)" },
+                { AppLanguage.English, "Unable to check for updates (check your connection)" },
+                { AppLanguage.Russian, "Не удалось проверить обновления (проверьте соединение)" }
             }},
 
             // === Systray Menu ===
@@ -332,9 +379,9 @@ namespace ScrollIt.Engine
                 { AppLanguage.Russian, "Установка Scroll-it" }
             }},
             { "Setup_HeaderTitle", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "Installation de Scroll-it v1.0.1" },
-                { AppLanguage.English, "Scroll-it Setup v1.0.1" },
-                { AppLanguage.Russian, "Установка Scroll-it v1.0.1" }
+                { AppLanguage.French, "Installation de Scroll-it v1.1.0" },
+                { AppLanguage.English, "Scroll-it Setup v1.1.0" },
+                { AppLanguage.Russian, "Установка Scroll-it v1.1.0" }
             }},
             { "Setup_WelcomeHeading", new Dictionary<AppLanguage, string> {
                 { AppLanguage.French, "Bienvenue dans le programme d'installation de Scroll-it" },

@@ -44,6 +44,7 @@ namespace ScrollIt.Engine
         [DataMember] public bool StartWithWindows { get; set; }
         [DataMember] public bool MinimizeToTrayOnClose { get; set; }
         [DataMember] public bool BypassCtrlZoom { get; set; }
+        [DataMember] public bool ReverseDirection { get; set; }
         [DataMember] public string Language { get; set; }
         [DataMember] public List<string> BlacklistedApps { get; set; }
 
@@ -58,6 +59,7 @@ namespace ScrollIt.Engine
             StartWithWindows = false;
             MinimizeToTrayOnClose = true;
             BypassCtrlZoom = true;
+            ReverseDirection = false;
             Language = "auto";
             BlacklistedApps = new List<string>();
         }

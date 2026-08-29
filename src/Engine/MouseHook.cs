@@ -213,6 +213,16 @@ namespace ScrollIt.Engine
                         return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
                     }
 
+                    // 1b. Arrêt instantané de l'inertie lors de tout clic souris (changement d'onglet, clic dans la page, focus, sélection)
+                    if (msg == Win32.WM_LBUTTONDOWN || 
+                        msg == Win32.WM_RBUTTONDOWN || 
+                        msg == Win32.WM_MBUTTONDOWN || 
+                        msg == Win32.WM_XBUTTONDOWN)
+                    {
+                        ScrollPhysics.Stop();
+                        return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
+                    }
+
                     if (msg == Win32.WM_MOUSEWHEEL || msg == Win32.WM_MOUSEHWHEEL)
                     {
                         Win32.MSLLHOOKSTRUCT hookStruct = (Win32.MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(Win32.MSLLHOOKSTRUCT));
@@ -232,6 +242,7 @@ namespace ScrollIt.Engine
                         // 4. Pass-through immédiat Ctrl + Molette (zoom natif direct sans inertie)
                         if (Win32.IsCtrlPressed())
                         {
+                            ScrollPhysics.Stop();
                             return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
                         }
 
@@ -248,7 +259,13 @@ namespace ScrollIt.Engine
                             return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
                         }
 
-                        // 6. Filtre et Pass-Through pour Pavés Tactiles de Précision (PTP) & molettes haute résolution
+                        // 6. Inversion de direction si l'option Défilement Naturel est activée
+                        if (SettingsManager.Current != null && SettingsManager.Current.ReverseDirection)
+                        {
+                            delta = (short)(-delta);
+                        }
+
+                        // 7. Filtre et Pass-Through pour Pavés Tactiles de Précision (PTP) & molettes haute résolution
                         // Les trackpads et surfaces tactiles envoient des deltas continus et fractionnaires (non multiples de 120)
                         // Déjà gérés de façon optimale par DirectManipulation / le pilote matériel de Windows
                         if (Math.Abs(delta) < Win32.WHEEL_DELTA || (delta % Win32.WHEEL_DELTA != 0))
@@ -256,8 +273,9 @@ namespace ScrollIt.Engine
                             return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
                         }
 
-                        // 7. Interception du cran physique & injection dans le moteur physique cadencé
-                        bool isHorizontal = (msg == Win32.WM_MOUSEHWHEEL);
+                        // 8. Interception du cran physique & injection dans le moteur physique cadencé
+                        // Si Shift est maintenu, redirection automatique vers le défilement horizontal fluide
+                        bool isHorizontal = (msg == Win32.WM_MOUSEHWHEEL || Win32.IsShiftPressed());
                         ScrollPhysics.OnWheel((int)delta, isHorizontal, hookStruct.pt);
 
                         // Suppression du cran saccadé original
