@@ -202,10 +202,21 @@ namespace ScrollIt.Engine
         [DllImport("dwmapi.dll")]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
+        public const int DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
+        public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+        public const int DWMWA_MICA_EFFECT = 1029;
+
         public const int DWMWCP_DEFAULT = 0;
         public const int DWMWCP_DONOTROUND = 1;
         public const int DWMWCP_ROUND = 2;
+
+        public const int DWMSBT_AUTO = 0;
+        public const int DWMSBT_NONE = 1;
+        public const int DWMSBT_MAINWINDOW = 2; // Mica
+        public const int DWMSBT_TRANSIENTWINDOW = 3; // Acrylic
+        public const int DWMSBT_TABBEDWINDOW = 4; // Mica Alt
 
         public static void EnableWindows11RoundedCorners(IntPtr hwnd)
         {
@@ -218,6 +229,111 @@ namespace ScrollIt.Engine
             {
                 int cornerPreference = isMaximized ? DWMWCP_DONOTROUND : DWMWCP_ROUND;
                 DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPreference, sizeof(int));
+            }
+            catch { }
+        }
+
+        public enum AccentState
+        {
+            ACCENT_DISABLED = 0,
+            ACCENT_ENABLE_GRADIENT = 1,
+            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+            ACCENT_ENABLE_BLURBEHIND = 3,
+            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+            ACCENT_ENABLE_HOSTBACKDROP = 5,
+            ACCENT_INVALID_STATE = 6
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AccentPolicy
+        {
+            public AccentState AccentState;
+            public int AccentFlags;
+            public int GradientColor;
+            public int AnimationId;
+        }
+
+        public enum WindowCompositionAttribute
+        {
+            WCA_ACCENT_POLICY = 19
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct WindowCompositionAttributeData
+        {
+            public WindowCompositionAttribute Attribute;
+            public IntPtr Data;
+            public int SizeOfData;
+        }
+
+        [DllImport("user32.dll")]
+        public static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        public static void SetWindowBlur(IntPtr hwnd, AccentState state, uint gradientColor = 0)
+        {
+            try
+            {
+                AccentPolicy policy = new AccentPolicy
+                {
+                    AccentState = state,
+                    AccentFlags = 2,
+                    GradientColor = (int)gradientColor,
+                    AnimationId = 0
+                };
+
+                int structSize = Marshal.SizeOf(policy);
+                IntPtr pPolicy = Marshal.AllocHGlobal(structSize);
+                try
+                {
+                    Marshal.StructureToPtr(policy, pPolicy, false);
+                    WindowCompositionAttributeData data = new WindowCompositionAttributeData
+                    {
+                        Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY,
+                        Data = pPolicy,
+                        SizeOfData = structSize
+                    };
+                    SetWindowCompositionAttribute(hwnd, ref data);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(pPolicy);
+                }
+            }
+            catch { }
+        }
+
+        public static void ApplyDwmBackdrop(IntPtr hwnd, string backdropStyle)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                // 1. Enable Immersive Dark Mode for window
+                int darkMode = 1;
+                if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int)) != 0)
+                {
+                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ref darkMode, sizeof(int));
+                }
+
+                if (string.Equals(backdropStyle, "Acrylic", StringComparison.OrdinalIgnoreCase))
+                {
+                    // True Acrylic Blur with subtle dark tint
+                    SetWindowBlur(hwnd, AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND, 0x90231B16);
+                }
+                else if (string.Equals(backdropStyle, "Mica", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Mica Blur
+                    SetWindowBlur(hwnd, AccentState.ACCENT_ENABLE_BLURBEHIND, 0x80161B23);
+                }
+                else if (string.Equals(backdropStyle, "OledBlack", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Smooth solid OLED black without DWM surface tearing
+                    SetWindowBlur(hwnd, AccentState.ACCENT_ENABLE_GRADIENT, 0xFF0A0705);
+                }
+                else
+                {
+                    // Smooth solid dark glass without DWM surface tearing
+                    SetWindowBlur(hwnd, AccentState.ACCENT_ENABLE_GRADIENT, 0xFF17110D);
+                }
             }
             catch { }
         }

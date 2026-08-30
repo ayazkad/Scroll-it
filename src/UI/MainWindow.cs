@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -21,8 +22,12 @@ namespace ScrollIt.UI
         [System.Runtime.InteropServices.DllImport("gdi32.dll", SetLastError = true)]
         private static extern bool DeleteObject(IntPtr hObject);
 
+        private static readonly object _iconLock = new object();
         private static readonly Dictionary<string, ImageSource> _iconCache = new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> _pendingIconResolves = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static ImageSource _defaultAppIcon = null;
+        private int _comboPopulateSeq = 0;
+        private bool _isComboPopulated = false;
 
         static MainWindow()
         {
@@ -97,6 +102,10 @@ namespace ScrollIt.UI
         private TextBlock _appsInfoTitle;
         private TextBlock _appsInfoDesc;
         private TextBlock _appsAddTitle;
+        private TextBlock _appsSearchPlaceholder;
+        private Popup _appsSearchPopup;
+        private StackPanel _appsSuggestionsPanel;
+        private Button _appsBrowseBtn;
         private Button _appsAddBtn;
         private Button _appsQuickAddBtn;
         private StackPanel _blacklistedListPanel;
@@ -106,13 +115,26 @@ namespace ScrollIt.UI
         // Options tab
         private TextBlock _optTitle;
         private TextBlock _optLangTitle;
-        private ToggleButton _btnLanguageDropdown;
-        private Popup _langPopup;
-        private CheckBox _chkAutoStart;
-        private CheckBox _chkCtrlZoom;
-        private CheckBox _chkReverseDirection;
-        private CheckBox _chkMinimizeToTray;
+        private Button _btnLangFr;
+        private Button _btnLangEn;
+        private Button _btnLangRu;
+        private Button _btnOptAutoStart;
+        private Button _btnOptCtrlZoom;
+        private Button _btnOptReverseDirection;
+        private Button _btnOptMinimizeToTray;
         private Button _btnResetDefaults;
+
+        // Theme & Windows 11 Appearance
+        private TextBlock _optThemeTitle;
+        private TextBlock _lblAccentTitle;
+        private TextBlock _lblBackdropTitle;
+        private Dictionary<string, Button> _accentButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, Button> _backdropButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<SwatchButtonUI> _swatchUIs = new List<SwatchButtonUI>();
+        private readonly List<Border> _valBadgeBorders = new List<Border>();
+        private readonly Dictionary<Button, bool> _stepperButtons = new Dictionary<Button, bool>();
+        private Border _titleLogoBadge;
+        private Border _tabPhysicsLogoWrap;
 
         // Update Checker
         private TextBlock _updateTitle;
@@ -123,6 +145,9 @@ namespace ScrollIt.UI
         private Button _btnCheckUpdate;
         private Button _btnDownloadUpdate;
         private string _latestReleaseUrl = UpdateChecker.DefaultReleasesPage;
+        private enum UpdateStatusState { None, Checking, UpToDate, Available, Error }
+        private UpdateStatusState _lastUpdateStatus = UpdateStatusState.None;
+        private string _lastAvailableVersion = "";
 
         // Container & Window Controls
         private Border _mainContainer;
@@ -134,6 +159,8 @@ namespace ScrollIt.UI
 
         public MainWindow()
         {
+            AppFinder.InitializeAsync();
+            Styles.ApplyTheme(SettingsManager.Current.AccentColor, SettingsManager.Current.BackdropStyle);
             InitializeWindow();
             BuildUI();
             LoadSettingsToUI();
@@ -165,6 +192,8 @@ namespace ScrollIt.UI
             UseLayoutRounding = true;
             SnapsToDevicePixels = true;
 
+            Resources[typeof(ScrollViewer)] = Styles.CreateCustomScrollViewerStyle();
+
             try
             {
                 string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"src\scroll-it.ico");
@@ -181,26 +210,10 @@ namespace ScrollIt.UI
                 IntPtr handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
                 System.Windows.Interop.HwndSource.FromHwnd(handle).AddHook(WindowProc);
                 Win32.EnableWindows11RoundedCorners(handle);
+                Win32.ApplyDwmBackdrop(handle, SettingsManager.Current.BackdropStyle);
             };
 
-            PreviewMouseLeftButtonDown += (s, e) =>
-            {
-                if (_btnLanguageDropdown != null && _btnLanguageDropdown.IsChecked == true)
-                {
-                    if (!_btnLanguageDropdown.IsMouseOver)
-                    {
-                        _btnLanguageDropdown.IsChecked = false;
-                    }
-                }
-            };
 
-            Deactivated += (s, e) =>
-            {
-                if (_btnLanguageDropdown != null)
-                {
-                    _btnLanguageDropdown.IsChecked = false;
-                }
-            };
 
             StateChanged += (s, e) =>
             {
@@ -364,7 +377,7 @@ namespace ScrollIt.UI
         {
             _titleBarBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(16, 21, 28)),
+                Background = new SolidColorBrush(Color.FromArgb(80, 16, 21, 28)),
                 CornerRadius = new CornerRadius(9, 9, 0, 0),
                 Margin = new Thickness(0)
             };
@@ -391,7 +404,7 @@ namespace ScrollIt.UI
                 Margin = new Thickness(20, 0, 0, 0)
             };
 
-            Border iconBadge = new Border
+            _titleLogoBadge = new Border
             {
                 Margin = new Thickness(0, 0, 12, 0),
                 Effect = new DropShadowEffect
@@ -402,8 +415,8 @@ namespace ScrollIt.UI
                     Opacity = 0.65
                 }
             };
-            iconBadge.Child = Styles.CreateProjectLogo(36);
-            leftPanel.Children.Add(iconBadge);
+            _titleLogoBadge.Child = Styles.CreateProjectLogo(36);
+            leftPanel.Children.Add(_titleLogoBadge);
 
             TextBlock title = new TextBlock
             {
@@ -616,9 +629,10 @@ namespace ScrollIt.UI
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            _btnTabPhysics = CreateNavTab(I18n.T("Tab_Physics"), Styles.CreateProjectLogo(18), true, () => SwitchTab(0), out _txtTabPhysics);
-            _btnTabApps = CreateNavTab(I18n.T("Tab_Apps"), CreateTabEmoji("🎮"), false, () => SwitchTab(1), out _txtTabApps);
-            _btnTabOptions = CreateNavTab(I18n.T("Tab_Options"), CreateTabEmoji("⚙"), false, () => SwitchTab(2), out _txtTabOptions);
+            Border dummyWrap1, dummyWrap2;
+            _btnTabPhysics = CreateNavTab(I18n.T("Tab_Physics"), Styles.CreateProjectLogo(18), true, () => SwitchTab(0), out _txtTabPhysics, out _tabPhysicsLogoWrap);
+            _btnTabApps = CreateNavTab(I18n.T("Tab_Apps"), CreateTabEmoji("🎮"), false, () => SwitchTab(1), out _txtTabApps, out dummyWrap1);
+            _btnTabOptions = CreateNavTab(I18n.T("Tab_Options"), CreateTabEmoji("⚙"), false, () => SwitchTab(2), out _txtTabOptions, out dummyWrap2);
 
             _tabStack.Children.Add(_btnTabPhysics);
             _tabStack.Children.Add(_btnTabApps);
@@ -759,7 +773,7 @@ namespace ScrollIt.UI
             return tabBorder;
         }
 
-        private Button CreateNavTab(string title, UIElement icon, bool active, Action onClick, out TextBlock outText)
+        private Button CreateNavTab(string title, UIElement icon, bool active, Action onClick, out TextBlock outText, out Border outIconWrap)
         {
             StackPanel contentStack = new StackPanel
             {
@@ -767,9 +781,10 @@ namespace ScrollIt.UI
                 VerticalAlignment = VerticalAlignment.Center
             };
 
+            Border iconWrap = null;
             if (icon != null)
             {
-                Border iconWrap = new Border
+                iconWrap = new Border
                 {
                     Margin = new Thickness(0, 0, 8, 0),
                     VerticalAlignment = VerticalAlignment.Center,
@@ -777,6 +792,7 @@ namespace ScrollIt.UI
                 };
                 contentStack.Children.Add(iconWrap);
             }
+            outIconWrap = iconWrap;
 
             TextBlock text = new TextBlock
             {
@@ -917,14 +933,17 @@ namespace ScrollIt.UI
 
             UpdateTabIndicator(index, true);
 
-            if (index == 1)
-            {
-                RefreshAppsList();
-            }
-
             FrameworkElement nextView = (index == 0) ? _tabPhysicsView : (index == 1 ? _tabAppsView : _tabOptionsView);
             AnimateTabContentTransition(_currentView, nextView, slideFromRight);
             _currentView = nextView;
+
+            if (index == 1)
+            {
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
+                {
+                    RefreshAppsList();
+                }));
+            }
         }
 
         private void AnimateTabContentTransition(FrameworkElement oldView, FrameworkElement newView, bool slideFromRight)
@@ -933,54 +952,34 @@ namespace ScrollIt.UI
 
             FrameworkElement[] allViews = new FrameworkElement[] { _tabPhysicsView, _tabAppsView, _tabOptionsView };
 
+            // Setup newView initial state
+            newView.BeginAnimation(UIElement.OpacityProperty, null);
+            newView.Opacity = 0.0;
+            newView.Visibility = Visibility.Visible;
+
+            // Immediately reset any background views
             foreach (FrameworkElement v in allViews)
             {
                 if (v != null && v != newView)
                 {
                     v.BeginAnimation(UIElement.OpacityProperty, null);
-                    TranslateTransform t = v.RenderTransform as TranslateTransform;
-                    if (t != null)
-                    {
-                        t.BeginAnimation(TranslateTransform.XProperty, null);
-                        t.X = 0;
-                    }
                     v.Opacity = 0.0;
                     v.Visibility = Visibility.Collapsed;
                 }
             }
 
-            TranslateTransform newTrans = newView.RenderTransform as TranslateTransform;
-            if (newTrans == null)
+            // Pure hardware-accelerated smooth opacity transition (220ms)
+            DoubleAnimation fadeAnim = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(220))
             {
-                newTrans = new TranslateTransform();
-                newView.RenderTransform = newTrans;
-            }
-
-            double enterOffset = slideFromRight ? 16.0 : -16.0;
-
-            newTrans.BeginAnimation(TranslateTransform.XProperty, null);
-            newView.BeginAnimation(UIElement.OpacityProperty, null);
-
-            newTrans.X = enterOffset;
-            newView.Opacity = 0.0;
-            newView.Visibility = Visibility.Visible;
-
-            CubicEase ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            TimeSpan duration = TimeSpan.FromMilliseconds(180);
-
-            DoubleAnimation slideAnim = new DoubleAnimation(enterOffset, 0.0, duration)
-            {
-                EasingFunction = ease,
-                FillBehavior = FillBehavior.HoldEnd
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.Stop
             };
 
-            DoubleAnimation fadeAnim = new DoubleAnimation(0.0, 1.0, duration)
+            fadeAnim.Completed += (s, e) =>
             {
-                EasingFunction = ease,
-                FillBehavior = FillBehavior.HoldEnd
+                newView.Opacity = 1.0;
             };
 
-            newTrans.BeginAnimation(TranslateTransform.XProperty, slideAnim);
             newView.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
         }
 
@@ -991,6 +990,7 @@ namespace ScrollIt.UI
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 Margin = new Thickness(0)
             };
+            SmoothScrollViewerHelper.Register(scroll);
             StackPanel stack = new StackPanel { Margin = new Thickness(4) };
 
             // Presets Bar
@@ -1150,13 +1150,14 @@ namespace ScrollIt.UI
 
             Border valBadge = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(120, 0, 210, 255)),
+                Background = new SolidColorBrush(Color.FromArgb(120, Styles.AccentPrimary.R, Styles.AccentPrimary.G, Styles.AccentPrimary.B)),
                 BorderBrush = Styles.AccentBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(8, 2, 8, 2),
                 VerticalAlignment = VerticalAlignment.Center
             };
+            _valBadgeBorders.Add(valBadge);
             TextBlock valText = new TextBlock
             {
                 Text = "100" + unit,
@@ -1224,21 +1225,13 @@ namespace ScrollIt.UI
             return panel;
         }
 
-        private Button CreateStepperButton(bool isPlus, Action onClick)
+        private ControlTemplate CreateStepperButtonTemplate(bool isPlus)
         {
-            Button btn = new Button
-            {
-                Width = 28,
-                Height = 28,
-                Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
             ControlTemplate tpl = new ControlTemplate(typeof(Button));
             FrameworkElementFactory border = new FrameworkElementFactory(typeof(Border));
             border.Name = "Border";
             border.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(22, 28, 38)));
-            border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromArgb(120, 0, 210, 255)));
+            border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromArgb(120, Styles.AccentPrimary.R, Styles.AccentPrimary.G, Styles.AccentPrimary.B)));
             border.SetValue(Border.BorderThicknessProperty, new Thickness(1.2));
             border.SetValue(Border.CornerRadiusProperty, new CornerRadius(14));
             border.SetValue(Border.EffectProperty, new DropShadowEffect
@@ -1285,11 +1278,11 @@ namespace ScrollIt.UI
             border.AppendChild(iconCanvas);
 
             Trigger mouseOverTrigger = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
-            mouseOverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(70, 0, 210, 255)), "Border"));
+            mouseOverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(70, Styles.AccentPrimary.R, Styles.AccentPrimary.G, Styles.AccentPrimary.B)), "Border"));
             mouseOverTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "Border"));
             mouseOverTrigger.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect
             {
-                Color = Color.FromRgb(0, 210, 255),
+                Color = Styles.AccentPrimary,
                 BlurRadius = 10,
                 ShadowDepth = 0,
                 Opacity = 0.7
@@ -1302,19 +1295,34 @@ namespace ScrollIt.UI
             tpl.Triggers.Add(mouseOverTrigger);
 
             Trigger pressedTrigger = new Trigger { Property = Button.IsPressedProperty, Value = true };
-            pressedTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(140, 0, 180, 230)), "Border"));
+            pressedTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(140, Styles.AccentPrimary.R, Styles.AccentPrimary.G, Styles.AccentPrimary.B)), "Border"));
             pressedTrigger.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "Border"));
             tpl.Triggers.Add(pressedTrigger);
 
             tpl.VisualTree = border;
-            btn.Template = tpl;
+            return tpl;
+        }
+
+        private Button CreateStepperButton(bool isPlus, Action onClick)
+        {
+            Button btn = new Button
+            {
+                Width = 28,
+                Height = 28,
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            btn.Template = CreateStepperButtonTemplate(isPlus);
             btn.Click += (s, e) => onClick();
+            _stepperButtons[btn] = isPlus;
             return btn;
         }
 
         private FrameworkElement BuildAppsView()
         {
             ScrollViewer scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            SmoothScrollViewerHelper.Register(scroll);
             StackPanel stack = new StackPanel { Margin = new Thickness(4) };
 
             Border infoCard = Styles.CreateGlassCard(16, 12);
@@ -1339,7 +1347,7 @@ namespace ScrollIt.UI
             infoCard.Child = infoStack;
             stack.Children.Add(infoCard);
 
-            // Add App section
+            // Add App section with live search & autocomplete
             Border addCard = Styles.CreateGlassCard(16, 12);
             addCard.Margin = new Thickness(0, 16, 0, 16);
             StackPanel addStack = new StackPanel();
@@ -1357,6 +1365,9 @@ namespace ScrollIt.UI
             Grid addGrid = new Grid();
             addGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             addGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            addGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            Grid searchBoxContainer = new Grid { Margin = new Thickness(0, 0, 10, 0) };
 
             _newAppTextBox = new TextBox
             {
@@ -1364,28 +1375,236 @@ namespace ScrollIt.UI
                 Foreground = Styles.TextWhiteBrush,
                 BorderBrush = Styles.CardBorderBrush,
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(10, 6, 10, 6),
+                Padding = new Thickness(10, 7, 10, 7),
                 FontSize = 13,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 10, 0)
+                VerticalAlignment = VerticalAlignment.Center
             };
-            addGrid.Children.Add(_newAppTextBox);
-            Grid.SetColumn(_newAppTextBox, 0);
+
+            _appsSearchPlaceholder = new TextBlock
+            {
+                Text = I18n.T("Apps_SearchPlaceholder"),
+                Foreground = new SolidColorBrush(Color.FromArgb(120, 139, 148, 158)),
+                FontSize = 12,
+                Margin = new Thickness(12, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false
+            };
+
+            searchBoxContainer.Children.Add(_newAppTextBox);
+            searchBoxContainer.Children.Add(_appsSearchPlaceholder);
+
+            // Floating Live Search Popup
+            _appsSearchPopup = new Popup
+            {
+                PlacementTarget = _newAppTextBox,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                PopupAnimation = PopupAnimation.Fade
+            };
+
+            Border popupBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(245, 18, 24, 34)),
+                BorderBrush = Styles.CardBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(6),
+                Margin = new Thickness(0, 4, 0, 0),
+                Effect = new DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    BlurRadius = 18,
+                    ShadowDepth = 4,
+                    Opacity = 0.85
+                }
+            };
+
+            _appsSuggestionsPanel = new StackPanel();
+            ScrollViewer popupScroll = new ScrollViewer
+            {
+                MaxHeight = 260,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = _appsSuggestionsPanel
+            };
+            popupBorder.Child = popupScroll;
+            _appsSearchPopup.Child = popupBorder;
+
+            searchBoxContainer.Children.Add(_appsSearchPopup);
+
+            _newAppTextBox.TextChanged += (s, e) =>
+            {
+                string query = _newAppTextBox.Text;
+                if (_appsSearchPlaceholder != null)
+                {
+                    _appsSearchPlaceholder.Visibility = string.IsNullOrEmpty(query) ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                if (string.IsNullOrWhiteSpace(query))
+                {
+                    _appsSearchPopup.IsOpen = false;
+                    _appsSuggestionsPanel.Children.Clear();
+                    return;
+                }
+
+                var matches = AppFinder.Search(query, 10);
+                _appsSuggestionsPanel.Children.Clear();
+
+                if (matches.Count == 0)
+                {
+                    Border noMatchBorder = new Border
+                    {
+                        Padding = new Thickness(10, 8, 10, 8)
+                    };
+                    TextBlock noMatchText = new TextBlock
+                    {
+                        Text = string.Format("Appuyer sur '+ Ajouter' pour exclure '{0}.exe'", query.Trim().Replace(".exe", "")),
+                        Foreground = Styles.TextMutedBrush,
+                        FontSize = 12,
+                        FontStyle = FontStyles.Italic
+                    };
+                    noMatchBorder.Child = noMatchText;
+                    _appsSuggestionsPanel.Children.Add(noMatchBorder);
+                }
+                else
+                {
+                    foreach (var app in matches)
+                    {
+                        var curApp = app;
+                        Border itemBorder = new Border
+                        {
+                            Background = Brushes.Transparent,
+                            CornerRadius = new CornerRadius(6),
+                            Padding = new Thickness(8, 6, 8, 6),
+                            Margin = new Thickness(0, 1, 0, 1),
+                            Cursor = Cursors.Hand
+                        };
+
+                        Grid itemGrid = new Grid();
+                        itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                        itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                        itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                        Image iconImg = new Image
+                        {
+                            Width = 20,
+                            Height = 20,
+                            Margin = new Thickness(0, 0, 10, 0),
+                            VerticalAlignment = VerticalAlignment.Center
+                        };
+                        iconImg.Source = GetAppIcon(curApp.ProcessName, iconImg);
+                        RenderOptions.SetBitmapScalingMode(iconImg, BitmapScalingMode.HighQuality);
+                        itemGrid.Children.Add(iconImg);
+                        Grid.SetColumn(iconImg, 0);
+
+                        StackPanel textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                        TextBlock nameText = new TextBlock
+                        {
+                            Text = curApp.DisplayName,
+                            Foreground = Styles.TextWhiteBrush,
+                            FontWeight = FontWeights.SemiBold,
+                            FontSize = 12
+                        };
+                        TextBlock procText = new TextBlock
+                        {
+                            Text = curApp.ProcessName + ".exe",
+                            Foreground = new SolidColorBrush(Styles.AccentPrimary),
+                            FontSize = 11,
+                            Margin = new Thickness(0, 1, 0, 0)
+                        };
+                        textStack.Children.Add(nameText);
+                        textStack.Children.Add(procText);
+                        itemGrid.Children.Add(textStack);
+                        Grid.SetColumn(textStack, 1);
+
+                        if (!string.IsNullOrEmpty(curApp.SourceInfo))
+                        {
+                            Border badge = new Border
+                            {
+                                Background = new SolidColorBrush(Color.FromArgb(50, 48, 54, 61)),
+                                CornerRadius = new CornerRadius(4),
+                                Padding = new Thickness(6, 2, 6, 2),
+                                VerticalAlignment = VerticalAlignment.Center
+                            };
+                            TextBlock badgeText = new TextBlock
+                            {
+                                Text = curApp.SourceInfo,
+                                Foreground = Styles.TextMutedBrush,
+                                FontSize = 10
+                            };
+                            badge.Child = badgeText;
+                            itemGrid.Children.Add(badge);
+                            Grid.SetColumn(badge, 2);
+                        }
+
+                        itemBorder.Child = itemGrid;
+
+                        itemBorder.MouseEnter += (snd, ea) =>
+                        {
+                            itemBorder.Background = new SolidColorBrush(Color.FromArgb(70, Styles.AccentPrimary.R, Styles.AccentPrimary.G, Styles.AccentPrimary.B));
+                        };
+                        itemBorder.MouseLeave += (snd, ea) =>
+                        {
+                            itemBorder.Background = Brushes.Transparent;
+                        };
+                        itemBorder.MouseLeftButtonDown += (snd, ea) =>
+                        {
+                            AddAppToBlacklist(curApp.ProcessName);
+                        };
+
+                        _appsSuggestionsPanel.Children.Add(itemBorder);
+                    }
+                }
+
+                _appsSearchPopup.Width = Math.Max(380, _newAppTextBox.ActualWidth + 80);
+                _appsSearchPopup.IsOpen = true;
+            };
+
+            _newAppTextBox.KeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Enter)
+                {
+                    ExecuteAddApp();
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    _appsSearchPopup.IsOpen = false;
+                }
+            };
+
+            addGrid.Children.Add(searchBoxContainer);
+            Grid.SetColumn(searchBoxContainer, 0);
+
+            // Browse button
+            _appsBrowseBtn = Styles.CreatePillButton(I18n.T("Apps_BrowseBtn"), false);
+            _appsBrowseBtn.Margin = new Thickness(0, 0, 8, 0);
+            _appsBrowseBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    OpenFileDialog ofd = new OpenFileDialog
+                    {
+                        Filter = "Exécutables (*.exe)|*.exe|Tous les fichiers (*.*)|*.*",
+                        Title = "Sélectionner une application ou un jeu"
+                    };
+                    if (ofd.ShowDialog() == true && !string.IsNullOrEmpty(ofd.FileName))
+                    {
+                        string pName = System.IO.Path.GetFileNameWithoutExtension(ofd.FileName).ToLowerInvariant();
+                        AddAppToBlacklist(pName);
+                    }
+                }
+                catch { }
+            };
+            addGrid.Children.Add(_appsBrowseBtn);
+            Grid.SetColumn(_appsBrowseBtn, 1);
 
             _appsAddBtn = Styles.CreatePillButton(I18n.T("Apps_AddBtn"), true);
             _appsAddBtn.Click += (s, e) =>
             {
-                string app = _newAppTextBox.Text.Trim().ToLowerInvariant().Replace(".exe", "");
-                if (!string.IsNullOrEmpty(app) && !SettingsManager.Current.BlacklistedApps.Contains(app))
-                {
-                    SettingsManager.Current.BlacklistedApps.Add(app);
-                    SettingsManager.Save();
-                    _newAppTextBox.Text = "";
-                    RefreshAppsList();
-                }
+                ExecuteAddApp();
             };
             addGrid.Children.Add(_appsAddBtn);
-            Grid.SetColumn(_appsAddBtn, 1);
+            Grid.SetColumn(_appsAddBtn, 2);
 
             addStack.Children.Add(addGrid);
 
@@ -1396,13 +1615,13 @@ namespace ScrollIt.UI
 
             _runningAppsCombo = new ComboBox
             {
-                Background = new SolidColorBrush(Color.FromArgb(180, 16, 21, 28)),
-                Foreground = Brushes.Black,
-                BorderBrush = Styles.CardBorderBrush,
-                BorderThickness = new Thickness(1),
+                Template = Styles.CreateCustomComboBoxTemplate(),
+                ItemContainerStyle = Styles.CreateCustomComboBoxItemStyle(),
+                Foreground = Styles.TextWhiteBrush,
                 Padding = new Thickness(8, 6, 8, 6),
                 Margin = new Thickness(0, 0, 10, 0),
-                MaxDropDownHeight = 220
+                MaxDropDownHeight = 220,
+                Cursor = Cursors.Hand
             };
             ScrollViewer.SetCanContentScroll(_runningAppsCombo, false);
             quickGrid.Children.Add(_runningAppsCombo);
@@ -1476,13 +1695,6 @@ namespace ScrollIt.UI
                     Margin = new Thickness(0, 4, 0, 4)
                 };
                 StackPanel emptyStack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-                TextBlock emptyIcon = new TextBlock
-                {
-                    Text = "✨",
-                    FontSize = 24,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 0, 0, 6)
-                };
                 TextBlock emptyTitle = new TextBlock
                 {
                     Text = I18n.T("Apps_EmptyTitle"),
@@ -1497,9 +1709,8 @@ namespace ScrollIt.UI
                     Foreground = Styles.TextMutedBrush,
                     FontSize = 11,
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 2, 0, 0)
+                    Margin = new Thickness(0, 4, 0, 0)
                 };
-                emptyStack.Children.Add(emptyIcon);
                 emptyStack.Children.Add(emptyTitle);
                 emptyStack.Children.Add(emptyDesc);
                 emptyBox.Child = emptyStack;
@@ -1533,12 +1744,12 @@ namespace ScrollIt.UI
                     // Application Icon
                     Image appIconImg = new Image
                     {
-                        Source = GetAppIcon(currentApp),
                         Width = 20,
                         Height = 20,
                         Margin = new Thickness(0, 0, 10, 0),
                         VerticalAlignment = VerticalAlignment.Center
                     };
+                    appIconImg.Source = GetAppIcon(currentApp, appIconImg);
                     RenderOptions.SetBitmapScalingMode(appIconImg, BitmapScalingMode.HighQuality);
                     leftPanel.Children.Add(appIconImg);
 
@@ -1579,6 +1790,7 @@ namespace ScrollIt.UI
                         SettingsManager.Current.BlacklistedApps.Remove(currentApp);
                         SettingsManager.Save();
                         RefreshAppsList();
+                        PopulateRunningAppsComboAsync(true);
                     };
                     itemGrid.Children.Add(delBtn);
                     Grid.SetColumn(delBtn, 1);
@@ -1588,17 +1800,54 @@ namespace ScrollIt.UI
                 }
             }
 
-            PopulateRunningAppsComboAsync();
+            PopulateRunningAppsComboAsync(false);
         }
 
-        private void PopulateRunningAppsComboAsync()
+        private void AddAppToBlacklist(string processName)
+        {
+            if (string.IsNullOrEmpty(processName)) return;
+            string clean = processName.Trim().ToLowerInvariant().Replace(".exe", "");
+            if (!string.IsNullOrEmpty(clean) && !SettingsManager.Current.BlacklistedApps.Contains(clean))
+            {
+                SettingsManager.Current.BlacklistedApps.Add(clean);
+                SettingsManager.Save();
+                if (_newAppTextBox != null) _newAppTextBox.Text = "";
+                if (_appsSearchPopup != null) _appsSearchPopup.IsOpen = false;
+                RefreshAppsList();
+                PopulateRunningAppsComboAsync(true);
+            }
+        }
+
+        private void ExecuteAddApp()
+        {
+            if (_newAppTextBox == null) return;
+            string text = _newAppTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(text)) return;
+
+            var matches = AppFinder.Search(text, 1);
+            if (matches.Count > 0)
+            {
+                AddAppToBlacklist(matches[0].ProcessName);
+            }
+            else
+            {
+                AddAppToBlacklist(text);
+            }
+        }
+
+        private void PopulateRunningAppsComboAsync(bool force = false)
         {
             if (_runningAppsCombo == null) return;
+            if (_isComboPopulated && !force) return;
+
+            int curSeq = ++_comboPopulateSeq;
 
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
             {
                 try
                 {
+                    if (curSeq != _comboPopulateSeq) return;
+
                     HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     List<string> appList = new List<string>();
 
@@ -1619,11 +1868,26 @@ namespace ScrollIt.UI
                         catch { }
                     }
 
+                    // Also add installed PC apps
+                    try
+                    {
+                        List<InstalledAppInfo> installed = AppFinder.GetAllApps();
+                        foreach (var app in installed)
+                        {
+                            if (!seen.Contains(app.ProcessName) && !SettingsManager.Current.BlacklistedApps.Contains(app.ProcessName))
+                            {
+                                seen.Add(app.ProcessName);
+                                appList.Add(app.ProcessName);
+                            }
+                        }
+                    }
+                    catch { }
+
                     appList.Sort(StringComparer.OrdinalIgnoreCase);
 
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        if (_runningAppsCombo == null) return;
+                        if (curSeq != _comboPopulateSeq || _runningAppsCombo == null) return;
                         _runningAppsCombo.Items.Clear();
 
                         foreach (string pName in appList)
@@ -1631,22 +1895,24 @@ namespace ScrollIt.UI
                             ComboBoxItem cbi = new ComboBoxItem
                             {
                                 Tag = pName,
-                                Padding = new Thickness(4, 3, 4, 3),
-                                Foreground = Brushes.Black
+                                Padding = new Thickness(6, 4, 6, 4),
+                                Foreground = Styles.TextWhiteBrush,
+                                Cursor = Cursors.Hand
                             };
                             StackPanel sp = new StackPanel { Orientation = Orientation.Horizontal };
                             Image cbiImg = new Image
                             {
-                                Source = GetAppIcon(pName),
                                 Width = 16,
                                 Height = 16,
                                 Margin = new Thickness(0, 0, 8, 0),
                                 VerticalAlignment = VerticalAlignment.Center
                             };
+                            cbiImg.Source = GetAppIcon(pName, cbiImg);
                             RenderOptions.SetBitmapScalingMode(cbiImg, BitmapScalingMode.HighQuality);
                             TextBlock cbiText = new TextBlock
                             {
                                 Text = pName + ".exe",
+                                Foreground = Styles.TextWhiteBrush,
                                 VerticalAlignment = VerticalAlignment.Center,
                                 FontSize = 12
                             };
@@ -1658,22 +1924,67 @@ namespace ScrollIt.UI
                         }
 
                         if (_runningAppsCombo.Items.Count > 0) _runningAppsCombo.SelectedIndex = 0;
+                        _isComboPopulated = true;
                     }));
                 }
                 catch { }
             });
         }
 
-        public static ImageSource GetAppIcon(string appName)
+        public static ImageSource GetAppIcon(string appName, Image targetImage = null)
         {
             if (string.IsNullOrEmpty(appName)) return GetDefaultAppIcon();
             appName = appName.Replace(".exe", "").Trim();
 
-            if (_iconCache.ContainsKey(appName))
+            lock (_iconLock)
             {
-                return _iconCache[appName];
+                ImageSource cached;
+                if (_iconCache.TryGetValue(appName, out cached))
+                {
+                    return cached;
+                }
             }
 
+            QueueAsyncIconResolve(appName, targetImage);
+            return GetDefaultAppIcon();
+        }
+
+        private static void QueueAsyncIconResolve(string appName, Image targetImage)
+        {
+            lock (_iconLock)
+            {
+                if (_iconCache.ContainsKey(appName) || _pendingIconResolves.Contains(appName))
+                    return;
+                _pendingIconResolves.Add(appName);
+            }
+
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                ImageSource resolved = ResolveAppIconInternal(appName);
+                ImageSource finalIcon = resolved ?? GetDefaultAppIcon();
+
+                lock (_iconLock)
+                {
+                    _iconCache[appName] = finalIcon;
+                    _pendingIconResolves.Remove(appName);
+                }
+
+                if (targetImage != null && resolved != null)
+                {
+                    try
+                    {
+                        targetImage.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            targetImage.Source = finalIcon;
+                        }), System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                    catch { }
+                }
+            });
+        }
+
+        private static ImageSource ResolveAppIconInternal(string appName)
+        {
             ImageSource result = null;
 
             try
@@ -1697,6 +2008,23 @@ namespace ScrollIt.UI
                 }
             }
             catch { }
+
+            if (result == null)
+            {
+                try
+                {
+                    var all = AppFinder.GetAllApps();
+                    foreach (var a in all)
+                    {
+                        if (string.Equals(a.ProcessName, appName, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(a.ExePath) && File.Exists(a.ExePath))
+                        {
+                            result = ExtractWpfIcon(a.ExePath);
+                            if (result != null) break;
+                        }
+                    }
+                }
+                catch { }
+            }
 
             if (result == null)
             {
@@ -1731,12 +2059,6 @@ namespace ScrollIt.UI
                 catch { }
             }
 
-            if (result == null)
-            {
-                result = GetDefaultAppIcon();
-            }
-
-            _iconCache[appName] = result;
             return result;
         }
 
@@ -1753,7 +2075,7 @@ namespace ScrollIt.UI
                             IntPtr hBitmap = bmp.GetHbitmap();
                             try
                             {
-                                ImageSource wpfBmp = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
+                                System.Windows.Media.Imaging.BitmapSource wpfBmp = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
                                     hBitmap,
                                     IntPtr.Zero,
                                     Int32Rect.Empty,
@@ -1778,27 +2100,36 @@ namespace ScrollIt.UI
         {
             if (_defaultAppIcon != null) return _defaultAppIcon;
 
-            DrawingGroup group = new DrawingGroup();
-            using (DrawingContext dc = group.Open())
+            lock (_iconLock)
             {
-                Brush bg = new SolidColorBrush(Color.FromArgb(180, 22, 27, 34));
-                Pen borderPen = new Pen(new SolidColorBrush(Color.FromArgb(100, 0, 210, 255)), 1.0);
-                dc.DrawRoundedRectangle(bg, borderPen, new Rect(1, 1, 22, 22), 4, 4);
+                if (_defaultAppIcon != null) return _defaultAppIcon;
 
-                Pen cyanPen = new Pen(new SolidColorBrush(Color.FromRgb(0, 210, 255)), 1.3);
-                dc.DrawRoundedRectangle(null, cyanPen, new Rect(5, 5, 14, 10), 2, 2);
-                dc.DrawLine(cyanPen, new Point(9, 17), new Point(15, 17));
-                dc.DrawLine(cyanPen, new Point(12, 15), new Point(12, 17));
+                DrawingGroup group = new DrawingGroup();
+                using (DrawingContext dc = group.Open())
+                {
+                    Brush bg = new SolidColorBrush(Color.FromArgb(180, 22, 27, 34));
+                    bg.Freeze();
+                    Pen borderPen = new Pen(new SolidColorBrush(Color.FromArgb(100, 0, 210, 255)), 1.0);
+                    borderPen.Freeze();
+                    dc.DrawRoundedRectangle(bg, borderPen, new Rect(1, 1, 22, 22), 4, 4);
+
+                    Pen cyanPen = new Pen(new SolidColorBrush(Color.FromRgb(0, 210, 255)), 1.3);
+                    cyanPen.Freeze();
+                    dc.DrawRoundedRectangle(null, cyanPen, new Rect(5, 5, 14, 10), 2, 2);
+                    dc.DrawLine(cyanPen, new Point(9, 17), new Point(15, 17));
+                    dc.DrawLine(cyanPen, new Point(12, 15), new Point(12, 17));
+                }
+                DrawingImage img = new DrawingImage(group);
+                img.Freeze();
+                _defaultAppIcon = img;
+                return _defaultAppIcon;
             }
-            DrawingImage img = new DrawingImage(group);
-            img.Freeze();
-            _defaultAppIcon = img;
-            return _defaultAppIcon;
         }
 
         private FrameworkElement BuildOptionsView()
         {
             ScrollViewer scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            SmoothScrollViewerHelper.Register(scroll);
             StackPanel stack = new StackPanel { Margin = new Thickness(4) };
 
             Border card = Styles.CreateGlassCard(20, 12);
@@ -1814,10 +2145,12 @@ namespace ScrollIt.UI
             };
             cStack.Children.Add(_optTitle);
 
-            // Language Selection Section (Horizontal layout)
-            Grid langRow = new Grid { Margin = new Thickness(0, 0, 0, 20) };
-            langRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            langRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            // Language Selection Section (Horizontal pill buttons)
+            WrapPanel langRow = new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 16)
+            };
 
             _optLangTitle = new TextBlock
             {
@@ -1828,214 +2161,197 @@ namespace ScrollIt.UI
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 16, 0)
             };
-            Grid.SetColumn(_optLangTitle, 0);
             langRow.Children.Add(_optLangTitle);
 
-            _btnLanguageDropdown = new ToggleButton
-            {
-                Height = 32,
-                Foreground = Styles.TextWhiteBrush,
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center
-            };
+            _btnLangFr = Styles.CreatePillButton("Français", I18n.CurrentLanguage == AppLanguage.French);
+            _btnLangFr.Margin = new Thickness(0, 0, 8, 0);
+            _btnLangFr.Click += (s, e) => SwitchLanguage(AppLanguage.French, "fr");
+            langRow.Children.Add(_btnLangFr);
 
-            UpdateLanguageDropdownText();
+            _btnLangEn = Styles.CreatePillButton("English", I18n.CurrentLanguage == AppLanguage.English);
+            _btnLangEn.Margin = new Thickness(0, 0, 8, 0);
+            _btnLangEn.Click += (s, e) => SwitchLanguage(AppLanguage.English, "en");
+            langRow.Children.Add(_btnLangEn);
 
-            ControlTemplate langTpl = new ControlTemplate(typeof(ToggleButton));
-            FrameworkElementFactory lBorder = new FrameworkElementFactory(typeof(Border));
-            lBorder.Name = "btnBorder";
-            lBorder.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(22, 27, 34)));
-            lBorder.SetValue(Border.BorderBrushProperty, Styles.CardBorderBrush);
-            lBorder.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-            lBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-            lBorder.SetValue(Border.PaddingProperty, new Thickness(14, 6, 14, 6));
-
-            FrameworkElementFactory lContent = new FrameworkElementFactory(typeof(ContentPresenter));
-            lContent.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-            lContent.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-            lBorder.AppendChild(lContent);
-
-            Trigger lHover = new Trigger { Property = ToggleButton.IsMouseOverProperty, Value = true };
-            lHover.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "btnBorder"));
-            lHover.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(30, 37, 48)), "btnBorder"));
-            langTpl.Triggers.Add(lHover);
-
-            Trigger lChecked = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = true };
-            lChecked.Setters.Add(new Setter(Border.BorderBrushProperty, Styles.AccentBrush, "btnBorder"));
-            lChecked.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(30, 37, 48)), "btnBorder"));
-            langTpl.Triggers.Add(lChecked);
-
-            langTpl.VisualTree = lBorder;
-            _btnLanguageDropdown.Template = langTpl;
-
-            _langPopup = new Popup
-            {
-                PlacementTarget = _btnLanguageDropdown,
-                Placement = PlacementMode.Bottom,
-                StaysOpen = true,
-                AllowsTransparency = true,
-                PopupAnimation = PopupAnimation.Fade
-            };
-
-            System.Windows.Data.Binding langBinding = new System.Windows.Data.Binding("IsChecked")
-            {
-                Source = _btnLanguageDropdown,
-                Mode = System.Windows.Data.BindingMode.TwoWay
-            };
-            _langPopup.SetBinding(Popup.IsOpenProperty, langBinding);
-
-            Border popupBorder = new Border
-            {
-                Background = new SolidColorBrush(Color.FromRgb(22, 27, 34)),
-                BorderBrush = Styles.CardBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(4),
-                Margin = new Thickness(0, 4, 0, 0),
-                Effect = new DropShadowEffect
-                {
-                    Color = Colors.Black,
-                    BlurRadius = 16,
-                    ShadowDepth = 3,
-                    Opacity = 0.7
-                }
-            };
-
-            StackPanel pStack = new StackPanel { Width = 130 };
-
-            Action<string, AppLanguage, string> addItem = (label, lang, code) =>
-            {
-                Button itemBtn = new Button
-                {
-                    Content = label,
-                    Foreground = (I18n.CurrentLanguage == lang) ? Styles.AccentBrush : Styles.TextWhiteBrush,
-                    FontSize = 13,
-                    FontWeight = (I18n.CurrentLanguage == lang) ? FontWeights.Bold : FontWeights.Normal,
-                    Cursor = Cursors.Hand,
-                    Margin = new Thickness(0, 1, 0, 1)
-                };
-
-                ControlTemplate iTpl = new ControlTemplate(typeof(Button));
-                FrameworkElementFactory iBorder = new FrameworkElementFactory(typeof(Border));
-                iBorder.Name = "iBorder";
-                iBorder.SetValue(Border.BackgroundProperty, (I18n.CurrentLanguage == lang) ? new SolidColorBrush(Color.FromArgb(40, 0, 210, 255)) : Brushes.Transparent);
-                iBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
-                iBorder.SetValue(Border.PaddingProperty, new Thickness(12, 6, 12, 6));
-
-                FrameworkElementFactory iContent = new FrameworkElementFactory(typeof(ContentPresenter));
-                iContent.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Left);
-                iContent.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-                iBorder.AppendChild(iContent);
-
-                Trigger iHover = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
-                iHover.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(32, 40, 52)), "iBorder"));
-                iHover.Setters.Add(new Setter(Button.ForegroundProperty, Brushes.White));
-                iTpl.Triggers.Add(iHover);
-
-                iTpl.VisualTree = iBorder;
-                itemBtn.Template = iTpl;
-
-                itemBtn.Click += (s, e) =>
-                {
-                    _btnLanguageDropdown.IsChecked = false;
-                    if (I18n.CurrentLanguage != lang)
-                    {
-                        SwitchLanguage(lang, code);
-                    }
-                };
-                pStack.Children.Add(itemBtn);
-            };
-
-            addItem("Français", AppLanguage.French, "fr");
-            addItem("English", AppLanguage.English, "en");
-            addItem("Русский", AppLanguage.Russian, "ru");
-
-            popupBorder.Child = pStack;
-            _langPopup.Child = popupBorder;
-
-            Grid langWrap = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
-            langWrap.Children.Add(_btnLanguageDropdown);
-            langWrap.Children.Add(_langPopup);
-            Grid.SetColumn(langWrap, 1);
-            langRow.Children.Add(langWrap);
+            _btnLangRu = Styles.CreatePillButton("Русский", I18n.CurrentLanguage == AppLanguage.Russian);
+            _btnLangRu.Margin = new Thickness(0, 0, 8, 0);
+            _btnLangRu.Click += (s, e) => SwitchLanguage(AppLanguage.Russian, "ru");
+            langRow.Children.Add(_btnLangRu);
 
             cStack.Children.Add(langRow);
 
-            // Auto-start CheckBox
-            _chkAutoStart = new CheckBox
+            // Options Row (Horizontal WrapPanel)
+            WrapPanel optionsRow = new WrapPanel
             {
-                Content = I18n.T("Options_AutoStart"),
-                Foreground = Styles.TextWhiteBrush,
-                FontSize = 13,
-                Margin = new Thickness(0, 0, 0, 16),
-                IsChecked = SettingsManager.Current.StartWithWindows,
-                Cursor = Cursors.Hand
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 10)
             };
-            _chkAutoStart.Checked += (s, e) => { SettingsManager.SetAutoStart(true); TrayManager.UpdateState(); };
-            _chkAutoStart.Unchecked += (s, e) => { SettingsManager.SetAutoStart(false); TrayManager.UpdateState(); };
-            cStack.Children.Add(_chkAutoStart);
 
-            // Ctrl Zoom CheckBox
-            _chkCtrlZoom = new CheckBox
+            // 1. Auto-start Pill Button
+            _btnOptAutoStart = Styles.CreatePillButton(I18n.T("Options_AutoStart"), SettingsManager.Current.StartWithWindows);
+            _btnOptAutoStart.Margin = new Thickness(0, 0, 8, 8);
+            _btnOptAutoStart.Click += (s, e) =>
             {
-                Content = I18n.T("Options_CtrlZoom"),
-                Foreground = Styles.TextWhiteBrush,
-                FontSize = 13,
-                Margin = new Thickness(0, 0, 0, 16),
-                IsChecked = SettingsManager.Current.BypassCtrlZoom,
-                Cursor = Cursors.Hand
+                bool newState = !SettingsManager.Current.StartWithWindows;
+                SettingsManager.SetAutoStart(newState);
+                UpdatePillButtonState(_btnOptAutoStart, newState);
+                TrayManager.UpdateState();
             };
-            _chkCtrlZoom.Checked += (s, e) => { SettingsManager.Current.BypassCtrlZoom = true; SettingsManager.Save(); };
-            _chkCtrlZoom.Unchecked += (s, e) => { SettingsManager.Current.BypassCtrlZoom = false; SettingsManager.Save(); };
-            cStack.Children.Add(_chkCtrlZoom);
+            optionsRow.Children.Add(_btnOptAutoStart);
 
-            // Reverse Direction (Natural Scrolling) CheckBox
-            _chkReverseDirection = new CheckBox
+            // 2. Ctrl Zoom Pill Button
+            _btnOptCtrlZoom = Styles.CreatePillButton(I18n.T("Options_CtrlZoom"), SettingsManager.Current.BypassCtrlZoom);
+            _btnOptCtrlZoom.Margin = new Thickness(0, 0, 8, 8);
+            _btnOptCtrlZoom.Click += (s, e) =>
             {
-                Content = I18n.T("Options_ReverseDirection"),
-                Foreground = Styles.TextWhiteBrush,
-                FontSize = 13,
-                Margin = new Thickness(0, 0, 0, 16),
-                IsChecked = SettingsManager.Current.ReverseDirection,
-                Cursor = Cursors.Hand
+                bool newState = !SettingsManager.Current.BypassCtrlZoom;
+                SettingsManager.Current.BypassCtrlZoom = newState;
+                SettingsManager.Save();
+                UpdatePillButtonState(_btnOptCtrlZoom, newState);
             };
-            _chkReverseDirection.Checked += (s, e) => { SettingsManager.Current.ReverseDirection = true; SettingsManager.Save(); };
-            _chkReverseDirection.Unchecked += (s, e) => { SettingsManager.Current.ReverseDirection = false; SettingsManager.Save(); };
-            cStack.Children.Add(_chkReverseDirection);
+            optionsRow.Children.Add(_btnOptCtrlZoom);
 
-            // Minimize to tray on close
-            _chkMinimizeToTray = new CheckBox
+            // 3. Reverse Direction Pill Button
+            _btnOptReverseDirection = Styles.CreatePillButton(I18n.T("Options_ReverseDirection"), SettingsManager.Current.ReverseDirection);
+            _btnOptReverseDirection.Margin = new Thickness(0, 0, 8, 8);
+            _btnOptReverseDirection.Click += (s, e) =>
             {
-                Content = I18n.T("Options_MinimizeToTray"),
-                Foreground = Styles.TextWhiteBrush,
-                FontSize = 13,
-                Margin = new Thickness(0, 0, 0, 24),
-                IsChecked = SettingsManager.Current.MinimizeToTrayOnClose,
-                Cursor = Cursors.Hand
+                bool newState = !SettingsManager.Current.ReverseDirection;
+                SettingsManager.Current.ReverseDirection = newState;
+                SettingsManager.Save();
+                UpdatePillButtonState(_btnOptReverseDirection, newState);
             };
-            _chkMinimizeToTray.Checked += (s, e) => { SettingsManager.Current.MinimizeToTrayOnClose = true; SettingsManager.Save(); };
-            _chkMinimizeToTray.Unchecked += (s, e) => { SettingsManager.Current.MinimizeToTrayOnClose = false; SettingsManager.Save(); };
-            cStack.Children.Add(_chkMinimizeToTray);
+            optionsRow.Children.Add(_btnOptReverseDirection);
+
+            // 4. Minimize to tray Pill Button
+            _btnOptMinimizeToTray = Styles.CreatePillButton(I18n.T("Options_MinimizeToTray"), SettingsManager.Current.MinimizeToTrayOnClose);
+            _btnOptMinimizeToTray.Margin = new Thickness(0, 0, 8, 8);
+            _btnOptMinimizeToTray.Click += (s, e) =>
+            {
+                bool newState = !SettingsManager.Current.MinimizeToTrayOnClose;
+                SettingsManager.Current.MinimizeToTrayOnClose = newState;
+                SettingsManager.Save();
+                UpdatePillButtonState(_btnOptMinimizeToTray, newState);
+            };
+            optionsRow.Children.Add(_btnOptMinimizeToTray);
+
+            cStack.Children.Add(optionsRow);
 
             // Reset Defaults Button
             _btnResetDefaults = Styles.CreatePillButton(I18n.T("Options_ResetDefaults"), false);
+            _btnResetDefaults.Margin = new Thickness(0, 4, 0, 0);
             _btnResetDefaults.Click += (s, e) =>
             {
                 SettingsManager.Current.BypassCtrlZoom = true;
                 SettingsManager.Current.ReverseDirection = false;
                 SettingsManager.Current.MinimizeToTrayOnClose = true;
-                if (_chkCtrlZoom != null) _chkCtrlZoom.IsChecked = true;
-                if (_chkReverseDirection != null) _chkReverseDirection.IsChecked = false;
-                if (_chkMinimizeToTray != null) _chkMinimizeToTray.IsChecked = true;
+                UpdatePillButtonState(_btnOptCtrlZoom, true);
+                UpdatePillButtonState(_btnOptReverseDirection, false);
+                UpdatePillButtonState(_btnOptMinimizeToTray, true);
+                SelectAccentColor("Cyan");
+                SelectBackdropStyle("Mica");
                 SelectPreset("Mac OS", true);
             };
             cStack.Children.Add(_btnResetDefaults);
 
             card.Child = cStack;
             stack.Children.Add(card);
+
+            // Theme & Windows 11 Appearance Glass Card
+            Border themeCard = Styles.CreateGlassCard(20, 12);
+            themeCard.Margin = new Thickness(0, 14, 0, 0);
+            StackPanel tStack = new StackPanel();
+
+            _optThemeTitle = new TextBlock
+            {
+                Text = I18n.T("Options_ThemeTitle"),
+                Foreground = Styles.TextWhiteBrush,
+                FontWeight = FontWeights.Bold,
+                FontSize = 15,
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+            tStack.Children.Add(_optThemeTitle);
+
+            // 1. Accent Color Selector
+            _lblAccentTitle = new TextBlock
+            {
+                Text = I18n.T("Theme_AccentLabel"),
+                Foreground = Styles.TextWhiteBrush,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            tStack.Children.Add(_lblAccentTitle);
+
+            WrapPanel accentRow = new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+
+            var accents = new []
+            {
+                new { Id = "Cyan", Name = "Cyber Cyan", Color = Color.FromRgb(0, 210, 255) },
+                new { Id = "Purple", Name = "macOS Purple", Color = Color.FromRgb(176, 102, 254) },
+                new { Id = "Emerald", Name = "Emerald", Color = Color.FromRgb(16, 185, 129) },
+                new { Id = "Sunset", Name = "Sunset", Color = Color.FromRgb(255, 101, 132) },
+                new { Id = "Electric", Name = "Electric Blue", Color = Color.FromRgb(59, 130, 246) },
+                new { Id = "Rose", Name = "Rose Gold", Color = Color.FromRgb(244, 63, 94) }
+            };
+
+            foreach (var acc in accents)
+            {
+                string curId = acc.Id;
+                Button btn = CreateAccentSwatchButton(curId, acc.Name, acc.Color, string.Equals(SettingsManager.Current.AccentColor, curId, StringComparison.OrdinalIgnoreCase), () =>
+                {
+                    SelectAccentColor(curId);
+                });
+                _accentButtons[curId] = btn;
+                accentRow.Children.Add(btn);
+            }
+            tStack.Children.Add(accentRow);
+
+            // 2. Backdrop Effect Selector
+            _lblBackdropTitle = new TextBlock
+            {
+                Text = I18n.T("Theme_BackdropLabel"),
+                Foreground = Styles.TextWhiteBrush,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            tStack.Children.Add(_lblBackdropTitle);
+
+            WrapPanel backdropRow = new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            var backdrops = new []
+            {
+                new { Id = "Mica", Key = "Backdrop_Mica" },
+                new { Id = "Acrylic", Key = "Backdrop_Acrylic" },
+                new { Id = "GlassDark", Key = "Backdrop_GlassDark" },
+                new { Id = "OledBlack", Key = "Backdrop_OledBlack" }
+            };
+
+            foreach (var bd in backdrops)
+            {
+                string curId = bd.Id;
+                string key = bd.Key;
+                Button btn = Styles.CreatePillButton(I18n.T(key), string.Equals(SettingsManager.Current.BackdropStyle, curId, StringComparison.OrdinalIgnoreCase));
+                btn.Click += (s, e) =>
+                {
+                    SelectBackdropStyle(curId);
+                };
+                _backdropButtons[curId] = btn;
+                backdropRow.Children.Add(btn);
+            }
+            tStack.Children.Add(backdropRow);
+
+            themeCard.Child = tStack;
+            stack.Children.Add(themeCard);
 
             // Updates Glass Card
             Border updateCard = Styles.CreateGlassCard(16, 12);
@@ -2202,22 +2518,303 @@ namespace ScrollIt.UI
             return btn;
         }
 
-        private void SwitchLanguage(AppLanguage lang, string code)
+        private class SwatchButtonUI
         {
-            I18n.CurrentLanguage = lang;
-            SettingsManager.Current.Language = code;
-            SettingsManager.Save();
-            UpdateLanguageDropdownText();
-            UpdateLocalizedTexts();
+            public Button Button;
+            public Border Border;
+            public TextBlock Text;
+            public Ellipse Dot;
+            public Color Color;
+            public string Id;
         }
 
-        private void UpdateLanguageDropdownText()
+        private Button CreateAccentSwatchButton(string id, string label, Color color, bool isActive, Action onClick)
         {
-            if (_btnLanguageDropdown == null) return;
-            string curName = "Français";
-            if (I18n.CurrentLanguage == AppLanguage.English) curName = "English";
-            else if (I18n.CurrentLanguage == AppLanguage.Russian) curName = "Русский";
-            _btnLanguageDropdown.Content = curName + "  ▾";
+            Button btn = new Button
+            {
+                Height = 32,
+                Margin = new Thickness(0, 0, 8, 8),
+                Cursor = Cursors.Hand,
+                Focusable = false,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0)
+            };
+
+            ControlTemplate tpl = new ControlTemplate(typeof(Button));
+            FrameworkElementFactory cp = new FrameworkElementFactory(typeof(ContentPresenter));
+            tpl.VisualTree = cp;
+            btn.Template = tpl;
+
+            Border border = new Border
+            {
+                CornerRadius = new CornerRadius(16),
+                Padding = new Thickness(10, 4, 12, 4),
+                Background = new SolidColorBrush(isActive ? Color.FromArgb(60, color.R, color.G, color.B) : Color.FromArgb(40, 22, 27, 34)),
+                BorderBrush = new SolidColorBrush(isActive ? color : Color.FromArgb(80, 48, 54, 61)),
+                BorderThickness = new Thickness(isActive ? 1.5 : 1.0)
+            };
+
+            StackPanel sp = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            Ellipse dot = new Ellipse
+            {
+                Width = 14.0,
+                Height = 14.0,
+                Fill = new SolidColorBrush(color),
+                Margin = new Thickness(0, 0, 8, 0),
+                Effect = new DropShadowEffect
+                {
+                    Color = color,
+                    BlurRadius = 8,
+                    ShadowDepth = 0,
+                    Opacity = isActive ? 0.9 : 0.4
+                }
+            };
+            sp.Children.Add(dot);
+
+            TextBlock txt = new TextBlock
+            {
+                Text = label,
+                Foreground = isActive ? Brushes.White : Styles.TextMutedBrush,
+                FontSize = 12.0,
+                FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Normal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            sp.Children.Add(txt);
+
+            border.Child = sp;
+            btn.Content = border;
+
+            btn.Click += (s, e) => onClick();
+
+            _swatchUIs.Add(new SwatchButtonUI
+            {
+                Button = btn,
+                Border = border,
+                Text = txt,
+                Dot = dot,
+                Color = color,
+                Id = id
+            });
+
+            return btn;
+        }
+
+        private void SelectAccentColor(string accentId)
+        {
+            ScrollViewer sv = _currentView as ScrollViewer;
+            double savedOffset = (sv != null) ? sv.VerticalOffset : 0;
+
+            SettingsManager.Current.AccentColor = accentId;
+            SettingsManager.Save();
+            Styles.ApplyTheme(SettingsManager.Current.AccentColor, SettingsManager.Current.BackdropStyle);
+
+            UpdateThemeButtonsUI();
+
+            if (_titleLogoBadge != null)
+            {
+                _titleLogoBadge.Child = Styles.CreateProjectLogo(36);
+                DropShadowEffect dse = _titleLogoBadge.Effect as DropShadowEffect;
+                if (dse != null) dse.Color = Styles.AccentPrimary;
+            }
+            if (_tabPhysicsLogoWrap != null)
+            {
+                _tabPhysicsLogoWrap.Child = Styles.CreateProjectLogo(18);
+            }
+
+            if (_stepSlider != null) _stepSlider.Template = Styles.CreateCustomSliderTemplate();
+            if (_timeSlider != null) _timeSlider.Template = Styles.CreateCustomSliderTemplate();
+            if (_accelSlider != null) _accelSlider.Template = Styles.CreateCustomSliderTemplate();
+            if (_tailSlider != null) _tailSlider.Template = Styles.CreateCustomSliderTemplate();
+
+            foreach (var pair in _presetButtons)
+            {
+                bool isAct = (pair.Key == SettingsManager.Current.ActivePreset);
+                pair.Value.Background = isAct ? (Brush)Styles.AccentGradient : (Brush)new SolidColorBrush(Color.FromArgb(80, 48, 54, 61));
+                pair.Value.Foreground = isAct ? (Brush)Brushes.Black : (Brush)Styles.TextWhiteBrush;
+            }
+
+            foreach (var b in _valBadgeBorders)
+            {
+                b.Background = new SolidColorBrush(Color.FromArgb(120, Styles.AccentPrimary.R, Styles.AccentPrimary.G, Styles.AccentPrimary.B));
+                b.BorderBrush = Styles.AccentBrush;
+            }
+
+            foreach (var item in _stepperButtons)
+            {
+                item.Key.Template = CreateStepperButtonTemplate(item.Value);
+            }
+
+            if (_runningAppsCombo != null)
+            {
+                _runningAppsCombo.Template = Styles.CreateCustomComboBoxTemplate();
+                _runningAppsCombo.ItemContainerStyle = Styles.CreateCustomComboBoxItemStyle();
+            }
+            if (_tabIndicator != null)
+            {
+                _tabIndicator.Background = Styles.AccentGradient;
+                DropShadowEffect tie = _tabIndicator.Effect as DropShadowEffect;
+                if (tie != null) tie.Color = Styles.AccentPrimary;
+            }
+            if (_btnTabPhysics != null && _currentTabIndex == 0) _btnTabPhysics.Foreground = Styles.AccentBrush;
+            if (_btnTabApps != null && _currentTabIndex == 1) _btnTabApps.Foreground = Styles.AccentBrush;
+            if (_btnTabOptions != null && _currentTabIndex == 2) _btnTabOptions.Foreground = Styles.AccentBrush;
+            if (_mainContainer != null)
+            {
+                _mainContainer.Background = Styles.BgBrush;
+                _mainContainer.BorderBrush = Styles.CardBorderBrush;
+            }
+
+            if (sv != null && savedOffset > 0)
+            {
+                sv.ScrollToVerticalOffset(savedOffset);
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+                {
+                    if (sv != null) sv.ScrollToVerticalOffset(savedOffset);
+                }));
+            }
+        }
+
+        private void SelectBackdropStyle(string backdropId)
+        {
+            ScrollViewer sv = _currentView as ScrollViewer;
+            double savedOffset = (sv != null) ? sv.VerticalOffset : 0;
+
+            SettingsManager.Current.BackdropStyle = backdropId;
+            SettingsManager.Save();
+            Styles.ApplyTheme(SettingsManager.Current.AccentColor, SettingsManager.Current.BackdropStyle);
+
+            try
+            {
+                IntPtr handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                Win32.ApplyDwmBackdrop(handle, backdropId);
+            }
+            catch { }
+
+            if (_mainContainer != null)
+            {
+                _mainContainer.Background = Styles.BgBrush;
+                _mainContainer.BorderBrush = Styles.CardBorderBrush;
+            }
+
+            UpdateThemeButtonsUI();
+
+            if (sv != null && savedOffset > 0)
+            {
+                sv.ScrollToVerticalOffset(savedOffset);
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+                {
+                    if (sv != null) sv.ScrollToVerticalOffset(savedOffset);
+                }));
+            }
+        }
+
+        private void UpdateThemeButtonsUI()
+        {
+            foreach (var swatch in _swatchUIs)
+            {
+                bool isAct = string.Equals(SettingsManager.Current.AccentColor, swatch.Id, StringComparison.OrdinalIgnoreCase);
+                swatch.Border.Background = new SolidColorBrush(isAct ? Color.FromArgb(60, swatch.Color.R, swatch.Color.G, swatch.Color.B) : Color.FromArgb(40, 22, 27, 34));
+                swatch.Border.BorderBrush = new SolidColorBrush(isAct ? swatch.Color : Color.FromArgb(80, 48, 54, 61));
+                swatch.Border.BorderThickness = new Thickness(isAct ? 1.5 : 1.0);
+                swatch.Text.Foreground = isAct ? Brushes.White : Styles.TextMutedBrush;
+                swatch.Text.FontWeight = isAct ? FontWeights.SemiBold : FontWeights.Normal;
+                DropShadowEffect dse = swatch.Dot.Effect as DropShadowEffect;
+                if (dse != null) dse.Opacity = isAct ? 0.9 : 0.4;
+            }
+
+            foreach (var pair in _backdropButtons)
+            {
+                bool isAct = string.Equals(SettingsManager.Current.BackdropStyle, pair.Key, StringComparison.OrdinalIgnoreCase);
+                pair.Value.Background = isAct ? (Brush)Styles.AccentGradient : (Brush)new SolidColorBrush(Color.FromArgb(80, 48, 54, 61));
+                pair.Value.Foreground = isAct ? (Brush)Brushes.Black : (Brush)Styles.TextWhiteBrush;
+            }
+
+            if (_btnOptAutoStart != null) UpdatePillButtonState(_btnOptAutoStart, SettingsManager.Current.StartWithWindows);
+            if (_btnOptCtrlZoom != null) UpdatePillButtonState(_btnOptCtrlZoom, SettingsManager.Current.BypassCtrlZoom);
+            if (_btnOptReverseDirection != null) UpdatePillButtonState(_btnOptReverseDirection, SettingsManager.Current.ReverseDirection);
+            if (_btnOptMinimizeToTray != null) UpdatePillButtonState(_btnOptMinimizeToTray, SettingsManager.Current.MinimizeToTrayOnClose);
+
+            UpdateLanguageButtonsUI();
+        }
+
+        private void UpdateLanguageButtonsUI()
+        {
+            if (_btnLangFr != null) UpdatePillButtonState(_btnLangFr, I18n.CurrentLanguage == AppLanguage.French);
+            if (_btnLangEn != null) UpdatePillButtonState(_btnLangEn, I18n.CurrentLanguage == AppLanguage.English);
+            if (_btnLangRu != null) UpdatePillButtonState(_btnLangRu, I18n.CurrentLanguage == AppLanguage.Russian);
+        }
+
+        private void UpdatePillButtonState(Button btn, bool isActive)
+        {
+            if (btn == null) return;
+            btn.Background = isActive ? (Brush)Styles.AccentGradient : (Brush)new SolidColorBrush(Color.FromArgb(80, 48, 54, 61));
+            btn.Foreground = isActive ? (Brush)Brushes.Black : (Brush)Styles.TextWhiteBrush;
+        }
+
+        private bool _isSwitchingLanguage = false;
+
+        private void SwitchLanguage(AppLanguage lang, string code)
+        {
+            if (I18n.CurrentLanguage == lang || _isSwitchingLanguage) return;
+            _isSwitchingLanguage = true;
+
+            FrameworkElement targetView = _currentView as FrameworkElement ?? _tabContentContainer;
+
+            if (targetView == null)
+            {
+                I18n.CurrentLanguage = lang;
+                SettingsManager.Current.Language = code;
+                SettingsManager.Save();
+                UpdateLanguageButtonsUI();
+                UpdateLocalizedTexts();
+                _isSwitchingLanguage = false;
+                return;
+            }
+
+            // Phase 1: Pure Fade Out
+            DoubleAnimation fadeOut = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(180))
+            {
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+                FillBehavior = FillBehavior.Stop
+            };
+
+            fadeOut.Completed += (s, e) =>
+            {
+                // Language update and UI text change while invisible (opacity 0)
+                I18n.CurrentLanguage = lang;
+                SettingsManager.Current.Language = code;
+                SettingsManager.Save();
+                UpdateLanguageButtonsUI();
+                UpdateLocalizedTexts();
+
+                targetView.Opacity = 0.0;
+
+                // Phase 2: Gentle, progressive Fade In
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, new Action(() =>
+                {
+                    DoubleAnimation fadeIn = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(650))
+                    {
+                        EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+                        FillBehavior = FillBehavior.Stop
+                    };
+
+                    fadeIn.Completed += (s2, e2) =>
+                    {
+                        targetView.Opacity = 1.0;
+                        _isSwitchingLanguage = false;
+                    };
+
+                    targetView.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+                }));
+            };
+
+            targetView.BeginAnimation(UIElement.OpacityProperty, fadeOut);
         }
 
         private void UpdateLocalizedTexts()
@@ -2244,16 +2841,28 @@ namespace ScrollIt.UI
             if (_appsInfoTitle != null) _appsInfoTitle.Text = I18n.T("Apps_CardTitle");
             if (_appsInfoDesc != null) _appsInfoDesc.Text = I18n.T("Apps_CardDesc");
             if (_appsAddTitle != null) _appsAddTitle.Text = I18n.T("Apps_AddTitle");
+            if (_appsSearchPlaceholder != null) _appsSearchPlaceholder.Text = I18n.T("Apps_SearchPlaceholder");
+            if (_appsBrowseBtn != null) _appsBrowseBtn.Content = I18n.T("Apps_BrowseBtn");
             if (_appsAddBtn != null) _appsAddBtn.Content = I18n.T("Apps_AddBtn");
             if (_appsQuickAddBtn != null) _appsQuickAddBtn.Content = I18n.T("Apps_AddProcessBtn");
 
             if (_optTitle != null) _optTitle.Text = I18n.T("Options_CardTitle");
             if (_optLangTitle != null) _optLangTitle.Text = I18n.T("Options_LanguageTitle");
-            if (_chkAutoStart != null) _chkAutoStart.Content = I18n.T("Options_AutoStart");
-            if (_chkCtrlZoom != null) _chkCtrlZoom.Content = I18n.T("Options_CtrlZoom");
-            if (_chkReverseDirection != null) _chkReverseDirection.Content = I18n.T("Options_ReverseDirection");
-            if (_chkMinimizeToTray != null) _chkMinimizeToTray.Content = I18n.T("Options_MinimizeToTray");
+            if (_btnOptAutoStart != null) _btnOptAutoStart.Content = I18n.T("Options_AutoStart");
+            if (_btnOptCtrlZoom != null) _btnOptCtrlZoom.Content = I18n.T("Options_CtrlZoom");
+            if (_btnOptReverseDirection != null) _btnOptReverseDirection.Content = I18n.T("Options_ReverseDirection");
+            if (_btnOptMinimizeToTray != null) _btnOptMinimizeToTray.Content = I18n.T("Options_MinimizeToTray");
             if (_btnResetDefaults != null) _btnResetDefaults.Content = I18n.T("Options_ResetDefaults");
+
+            if (_optThemeTitle != null) _optThemeTitle.Text = I18n.T("Options_ThemeTitle");
+            if (_lblAccentTitle != null) _lblAccentTitle.Text = I18n.T("Theme_AccentLabel");
+            if (_lblBackdropTitle != null) _lblBackdropTitle.Text = I18n.T("Theme_BackdropLabel");
+
+            if (_backdropButtons.ContainsKey("Mica")) _backdropButtons["Mica"].Content = I18n.T("Backdrop_Mica");
+            if (_backdropButtons.ContainsKey("Acrylic")) _backdropButtons["Acrylic"].Content = I18n.T("Backdrop_Acrylic");
+            if (_backdropButtons.ContainsKey("GlassDark")) _backdropButtons["GlassDark"].Content = I18n.T("Backdrop_GlassDark");
+            if (_backdropButtons.ContainsKey("OledBlack")) _backdropButtons["OledBlack"].Content = I18n.T("Backdrop_OledBlack");
+
             if (_updateTitle != null) _updateTitle.Text = I18n.T("Update_CardTitle");
             if (_updateVersionText != null) _updateVersionText.Text = I18n.T("Update_VersionLabel", UpdateChecker.CurrentVersion);
             if (_btnCheckUpdate != null) _btnCheckUpdate.Content = I18n.T("Update_CheckBtn");
@@ -2261,9 +2870,28 @@ namespace ScrollIt.UI
             if (_btnDonateText != null) _btnDonateText.Text = I18n.T("Btn_Donate");
             if (_btnDonateTextOpt != null) _btnDonateTextOpt.Text = I18n.T("Btn_Donate");
 
+            if (_updateStatusText != null && _updateStatusText.Visibility == Visibility.Visible)
+            {
+                switch (_lastUpdateStatus)
+                {
+                    case UpdateStatusState.Checking:
+                        _updateStatusText.Text = I18n.T("Update_Checking");
+                        break;
+                    case UpdateStatusState.UpToDate:
+                        _updateStatusText.Text = I18n.T("Update_UpToDate", UpdateChecker.CurrentVersion);
+                        break;
+                    case UpdateStatusState.Available:
+                        _updateStatusText.Text = I18n.T("Update_Available", _lastAvailableVersion);
+                        break;
+                    case UpdateStatusState.Error:
+                        _updateStatusText.Text = I18n.T("Update_Error");
+                        break;
+                }
+            }
+
             UpdateStatusUI(false);
             RefreshAppsList();
-            UpdateLanguageDropdownText();
+            UpdateLanguageButtonsUI();
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -2363,10 +2991,10 @@ namespace ScrollIt.UI
             if (_accelSlider != null) _accelSlider.Value = cfg.AccelerationMultiplier;
             if (_tailSlider != null) _tailSlider.Value = cfg.FrictionTail;
 
-            if (_chkAutoStart != null) _chkAutoStart.IsChecked = cfg.StartWithWindows;
-            if (_chkCtrlZoom != null) _chkCtrlZoom.IsChecked = cfg.BypassCtrlZoom;
-            if (_chkReverseDirection != null) _chkReverseDirection.IsChecked = cfg.ReverseDirection;
-            if (_chkMinimizeToTray != null) _chkMinimizeToTray.IsChecked = cfg.MinimizeToTrayOnClose;
+            if (_btnOptAutoStart != null) UpdatePillButtonState(_btnOptAutoStart, cfg.StartWithWindows);
+            if (_btnOptCtrlZoom != null) UpdatePillButtonState(_btnOptCtrlZoom, cfg.BypassCtrlZoom);
+            if (_btnOptReverseDirection != null) UpdatePillButtonState(_btnOptReverseDirection, cfg.ReverseDirection);
+            if (_btnOptMinimizeToTray != null) UpdatePillButtonState(_btnOptMinimizeToTray, cfg.MinimizeToTrayOnClose);
 
             foreach (var pair in _presetButtons)
             {
@@ -2375,12 +3003,20 @@ namespace ScrollIt.UI
                 pair.Value.Foreground = isAct ? (Brush)Brushes.Black : (Brush)Styles.TextWhiteBrush;
             }
 
-            if (_presetDescText != null)
+            if (_titleLogoBadge != null)
             {
-                _presetDescText.Text = I18n.GetPresetDescription(cfg.ActivePreset);
+                _titleLogoBadge.Child = Styles.CreateProjectLogo(36);
+                DropShadowEffect dse = _titleLogoBadge.Effect as DropShadowEffect;
+                if (dse != null) dse.Color = Styles.AccentPrimary;
             }
+            if (_tabPhysicsLogoWrap != null)
+            {
+                _tabPhysicsLogoWrap.Child = Styles.CreateProjectLogo(18);
+            }
+            Resources[typeof(ScrollViewer)] = Styles.CreateCustomScrollViewerStyle();
 
-            UpdateLanguageDropdownText();
+            UpdateThemeButtonsUI();
+            UpdateLanguageButtonsUI();
             UpdateStatusUI();
             _isUpdatingUI = false;
         }
@@ -2614,6 +3250,7 @@ namespace ScrollIt.UI
 
             if (_updateStatusText != null)
             {
+                _lastUpdateStatus = UpdateStatusState.Checking;
                 _updateStatusText.Visibility = Visibility.Visible;
                 _updateStatusText.Foreground = Styles.TextMutedBrush;
                 _updateStatusText.Text = I18n.T("Update_Checking");
@@ -2656,6 +3293,8 @@ namespace ScrollIt.UI
                     {
                         if (info.HasUpdate)
                         {
+                            _lastUpdateStatus = UpdateStatusState.Available;
+                            _lastAvailableVersion = info.LatestVersion;
                             _latestReleaseUrl = !string.IsNullOrEmpty(info.ReleaseUrl) ? info.ReleaseUrl : UpdateChecker.DefaultReleasesPage;
                             _updateStatusText.Visibility = Visibility.Visible;
                             _updateStatusText.Foreground = new SolidColorBrush(Styles.AccentPrimary);
@@ -2664,6 +3303,7 @@ namespace ScrollIt.UI
                         }
                         else
                         {
+                            _lastUpdateStatus = UpdateStatusState.UpToDate;
                             _updateStatusText.Visibility = Visibility.Visible;
                             _updateStatusText.Foreground = Styles.SuccessBrush;
                             _updateStatusText.Text = I18n.T("Update_UpToDate", UpdateChecker.CurrentVersion);
@@ -2674,17 +3314,133 @@ namespace ScrollIt.UI
                     {
                         if (isManual)
                         {
+                            _lastUpdateStatus = UpdateStatusState.Error;
                             _updateStatusText.Visibility = Visibility.Visible;
                             _updateStatusText.Foreground = new SolidColorBrush(Styles.DangerRed);
                             _updateStatusText.Text = I18n.T("Update_Error");
                         }
                         else
                         {
+                            _lastUpdateStatus = UpdateStatusState.None;
                             _updateStatusText.Visibility = Visibility.Collapsed;
                         }
                     }
                 }));
             });
+        }
+    }
+
+    public static class SmoothScrollViewerHelper
+    {
+        private class ScrollAnimState
+        {
+            public ScrollViewer Viewer;
+            public double TargetOffset;
+            public double CurrentOffset;
+        }
+
+        private static readonly Dictionary<ScrollViewer, ScrollAnimState> _animStates = new Dictionary<ScrollViewer, ScrollAnimState>();
+        private static bool _isRenderingSubscribed = false;
+
+        public static void Register(ScrollViewer sv)
+        {
+            if (sv == null) return;
+            sv.PreviewMouseWheel += OnPreviewMouseWheel;
+            sv.RequestBringIntoView += (s, e) =>
+            {
+                e.Handled = true;
+            };
+        }
+
+        private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            ScrollViewer sv = sender as ScrollViewer;
+            if (sv == null) return;
+
+            e.Handled = true;
+
+            double delta = e.Delta;
+            if (Math.Abs(delta) < 0.001) return;
+
+            ScrollAnimState state;
+            if (!_animStates.TryGetValue(sv, out state))
+            {
+                state = new ScrollAnimState
+                {
+                    Viewer = sv,
+                    CurrentOffset = sv.VerticalOffset,
+                    TargetOffset = sv.VerticalOffset
+                };
+                _animStates[sv] = state;
+            }
+            else
+            {
+                if (Math.Abs(state.CurrentOffset - sv.VerticalOffset) > 20.0)
+                {
+                    state.CurrentOffset = sv.VerticalOffset;
+                    state.TargetOffset = sv.VerticalOffset;
+                }
+            }
+
+            double step;
+            if (Math.Abs(delta) >= 120)
+            {
+                double notches = delta / 120.0;
+                step = notches * 90.0;
+            }
+            else
+            {
+                step = delta * 0.75;
+            }
+
+            double maxScroll = sv.ScrollableHeight;
+            state.TargetOffset = Math.Max(0, Math.Min(maxScroll, state.TargetOffset - step));
+
+            if (!_isRenderingSubscribed)
+            {
+                CompositionTarget.Rendering += OnRendering;
+                _isRenderingSubscribed = true;
+            }
+        }
+
+        private static void OnRendering(object sender, EventArgs e)
+        {
+            if (_animStates.Count == 0)
+            {
+                CompositionTarget.Rendering -= OnRendering;
+                _isRenderingSubscribed = false;
+                return;
+            }
+
+            List<ScrollViewer> toRemove = null;
+
+            foreach (var kvp in _animStates)
+            {
+                ScrollViewer sv = kvp.Key;
+                ScrollAnimState state = kvp.Value;
+
+                double diff = state.TargetOffset - state.CurrentOffset;
+                if (Math.Abs(diff) < 0.5)
+                {
+                    state.CurrentOffset = state.TargetOffset;
+                    sv.ScrollToVerticalOffset(state.TargetOffset);
+                    if (toRemove == null) toRemove = new List<ScrollViewer>();
+                    toRemove.Add(sv);
+                }
+                else
+                {
+                    state.CurrentOffset += diff * 0.22;
+                    sv.ScrollToVerticalOffset(state.CurrentOffset);
+                }
+            }
+
+            if (toRemove != null)
+            {
+                for (int i = 0; i < toRemove.Count; i++)
+                {
+                    _animStates.Remove(toRemove[i]);
+                }
+            }
         }
     }
 }

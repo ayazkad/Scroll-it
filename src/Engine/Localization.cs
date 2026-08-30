@@ -236,9 +236,19 @@ namespace ScrollIt.Engine
                 { AppLanguage.Russian, "Scroll-it автоматически отключается в указанных ниже приложениях (идеально для соревновательных игр, 3D/CAD софта или чувствительных программ)." }
             }},
             { "Apps_AddTitle", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "Ajouter une application" },
-                { AppLanguage.English, "Add an Application" },
-                { AppLanguage.Russian, "Добавить приложение" }
+                { AppLanguage.French, "Rechercher ou ajouter une application" },
+                { AppLanguage.English, "Search or add an application" },
+                { AppLanguage.Russian, "Найти или добавить приложение" }
+            }},
+            { "Apps_SearchPlaceholder", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Rechercher un jeu ou une application (ex: League of Legends, discord)..." },
+                { AppLanguage.English, "Search a game or app on PC (e.g. League of Legends, discord)..." },
+                { AppLanguage.Russian, "Поиск игры или программы на ПК (напр. League of Legends, discord)..." }
+            }},
+            { "Apps_BrowseBtn", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "📁 Parcourir" },
+                { AppLanguage.English, "📁 Browse" },
+                { AppLanguage.Russian, "📁 Обзор" }
             }},
             { "Apps_AddBtn", new Dictionary<AppLanguage, string> {
                 { AppLanguage.French, "+ Ajouter" },
@@ -277,35 +287,70 @@ namespace ScrollIt.Engine
                 { AppLanguage.English, "System Options & Behavior" },
                 { AppLanguage.Russian, "Системные параметры и поведение" }
             }},
+            { "Options_ThemeTitle", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Apparence & Effets Windows 11" },
+                { AppLanguage.English, "Appearance & Windows 11 Effects" },
+                { AppLanguage.Russian, "Внешний вид и эффекты Windows 11" }
+            }},
+            { "Theme_AccentLabel", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Couleur d'accentuation :" },
+                { AppLanguage.English, "Accent Color:" },
+                { AppLanguage.Russian, "Цвет акцента:" }
+            }},
+            { "Theme_BackdropLabel", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Effet d'arrière-plan (DWM / Fluent) :" },
+                { AppLanguage.English, "Backdrop Effect (DWM / Fluent):" },
+                { AppLanguage.Russian, "Эффект фона (DWM / Fluent):" }
+            }},
+            { "Backdrop_Mica", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Mica (Windows 11)" },
+                { AppLanguage.English, "Mica (Windows 11)" },
+                { AppLanguage.Russian, "Mica (Windows 11)" }
+            }},
+            { "Backdrop_Acrylic", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Acrylic (Flou translucide)" },
+                { AppLanguage.English, "Acrylic (Translucent Blur)" },
+                { AppLanguage.Russian, "Acrylic (Полупрозрачный)" }
+            }},
+            { "Backdrop_GlassDark", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Verre sombre classique" },
+                { AppLanguage.English, "Classic Dark Glass" },
+                { AppLanguage.Russian, "Классическое темное стекло" }
+            }},
+            { "Backdrop_OledBlack", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "OLED Noir profond" },
+                { AppLanguage.English, "OLED Deep Black" },
+                { AppLanguage.Russian, "OLED Глубокий черный" }
+            }},
             { "Options_LanguageTitle", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "🌐 Langue de l'interface" },
-                { AppLanguage.English, "🌐 Interface Language" },
-                { AppLanguage.Russian, "🌐 Язык интерфейса" }
+                { AppLanguage.French, "Langue de l'interface" },
+                { AppLanguage.English, "Interface Language" },
+                { AppLanguage.Russian, "Язык интерфейса" }
             }},
             { "Options_AutoStart", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "🚀 Lancer Scroll-it automatiquement au démarrage de Windows" },
-                { AppLanguage.English, "🚀 Launch Scroll-it automatically on Windows startup" },
-                { AppLanguage.Russian, "🚀 Запускать Scroll-it автоматически при старте Windows" }
+                { AppLanguage.French, "Lancer au démarrage" },
+                { AppLanguage.English, "Launch at startup" },
+                { AppLanguage.Russian, "Автозапуск" }
             }},
             { "Options_CtrlZoom", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "🔍 Préserver le zoom natif Ctrl + Molette (zoom précis sans interpolation)" },
-                { AppLanguage.English, "🔍 Preserve native Ctrl + Wheel zoom (precise zoom without interpolation)" },
-                { AppLanguage.Russian, "🔍 Сохранять стандартный зум Ctrl + Колесико (точный зум без интерполяции)" }
+                { AppLanguage.French, "Zoom natif Ctrl" },
+                { AppLanguage.English, "Native Ctrl zoom" },
+                { AppLanguage.Russian, "Точный зум Ctrl" }
             }},
             { "Options_ReverseDirection", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "🔄 Défilement naturel (sens de la molette inversé type tactile / macOS)" },
-                { AppLanguage.English, "🔄 Natural scrolling (invert mouse wheel direction like touch / macOS)" },
-                { AppLanguage.Russian, "🔄 Естественная прокрутка (инвертировать направление колесика)" }
+                { AppLanguage.French, "Défilement naturel" },
+                { AppLanguage.English, "Natural scrolling" },
+                { AppLanguage.Russian, "Естественная прокрутка" }
             }},
             { "Options_MinimizeToTray", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "📥 Réduire dans la barre des tâches (Systray) lors de la fermeture" },
-                { AppLanguage.English, "📥 Minimize to system tray on close" },
-                { AppLanguage.Russian, "📥 Сворачивать в системный трей при закрытии" }
+                { AppLanguage.French, "Réduire en Systray" },
+                { AppLanguage.English, "Minimize to tray" },
+                { AppLanguage.Russian, "Сворачивать в трей" }
             }},
             { "Options_ResetDefaults", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "↺ Réinitialiser tous les réglages par défaut" },
-                { AppLanguage.English, "↺ Reset all settings to defaults" },
-                { AppLanguage.Russian, "↺ Сбросить все настройки по умолчанию" }
+                { AppLanguage.French, "Réinitialiser tous les réglages par défaut" },
+                { AppLanguage.English, "Reset all settings to defaults" },
+                { AppLanguage.Russian, "Сбросить все настройки по умолчанию" }
             }},
 
             // === Update Checker ===
@@ -351,25 +396,35 @@ namespace ScrollIt.Engine
             }},
 
             // === Systray Menu ===
+            { "Tray_StatusActive", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "Actif" },
+                { AppLanguage.English, "Active" },
+                { AppLanguage.Russian, "Активен" }
+            }},
+            { "Tray_StatusPaused", new Dictionary<AppLanguage, string> {
+                { AppLanguage.French, "En pause (Désactivé)" },
+                { AppLanguage.English, "Paused (Disabled)" },
+                { AppLanguage.Russian, "Приостановлен (Отключен)" }
+            }},
             { "Tray_PresetsMenu", new Dictionary<AppLanguage, string> {
                 { AppLanguage.French, "Profils / Presets" },
                 { AppLanguage.English, "Presets / Profiles" },
                 { AppLanguage.Russian, "Профили / Пресеты" }
             }},
             { "Tray_Settings", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "⚙ Réglages Scroll-it..." },
-                { AppLanguage.English, "⚙ Scroll-it Settings..." },
-                { AppLanguage.Russian, "⚙ Настройки Scroll-it..." }
+                { AppLanguage.French, "Réglages Scroll-it..." },
+                { AppLanguage.English, "Scroll-it Settings..." },
+                { AppLanguage.Russian, "Настройки Scroll-it..." }
             }},
             { "Tray_AutoStart", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "🚀 Lancer au démarrage" },
-                { AppLanguage.English, "🚀 Launch at Startup" },
-                { AppLanguage.Russian, "🚀 Запуск при старте" }
+                { AppLanguage.French, "Lancer au démarrage" },
+                { AppLanguage.English, "Launch at Startup" },
+                { AppLanguage.Russian, "Запуск при старте" }
             }},
             { "Tray_Exit", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "❌ Quitter" },
-                { AppLanguage.English, "❌ Exit" },
-                { AppLanguage.Russian, "❌ Выход" }
+                { AppLanguage.French, "Quitter" },
+                { AppLanguage.English, "Exit" },
+                { AppLanguage.Russian, "Выход" }
             }},
 
             // === Setup Wizard ===
@@ -379,9 +434,9 @@ namespace ScrollIt.Engine
                 { AppLanguage.Russian, "Установка Scroll-it" }
             }},
             { "Setup_HeaderTitle", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "Installation de Scroll-it v1.1.0" },
-                { AppLanguage.English, "Scroll-it Setup v1.1.0" },
-                { AppLanguage.Russian, "Установка Scroll-it v1.1.0" }
+                { AppLanguage.French, "Installation de Scroll-it v1.1.2" },
+                { AppLanguage.English, "Scroll-it Setup v1.1.2" },
+                { AppLanguage.Russian, "Установка Scroll-it v1.1.2" }
             }},
             { "Setup_WelcomeHeading", new Dictionary<AppLanguage, string> {
                 { AppLanguage.French, "Bienvenue dans le programme d'installation de Scroll-it" },

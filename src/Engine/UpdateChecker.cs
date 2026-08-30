@@ -20,7 +20,7 @@ namespace ScrollIt.Engine
 
     public static class UpdateChecker
     {
-        public const string CurrentVersion = "1.1.0";
+        public const string CurrentVersion = "1.1.2";
         public const string RepositoryOwner = "ayazkad";
         public const string RepositoryName = "Scroll-it";
         private const string ApiUrl = "https://api.github.com/repos/ayazkad/Scroll-it/releases/latest";

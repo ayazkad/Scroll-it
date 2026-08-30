@@ -48,6 +48,7 @@ $mainSources = @(
     (Join-Path $PSScriptRoot "src\Engine\Localization.cs"),
     (Join-Path $PSScriptRoot "src\Engine\Win32.cs"),
     (Join-Path $PSScriptRoot "src\Engine\SettingsManager.cs"),
+    (Join-Path $PSScriptRoot "src\Engine\AppFinder.cs"),
     (Join-Path $PSScriptRoot "src\Engine\WebKitMomentumScroller.cs"),
     (Join-Path $PSScriptRoot "src\Engine\ScrollPhysics.cs"),
     (Join-Path $PSScriptRoot "src\Engine\MouseHook.cs"),

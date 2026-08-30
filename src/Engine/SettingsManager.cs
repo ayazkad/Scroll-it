@@ -46,6 +46,8 @@ namespace ScrollIt.Engine
         [DataMember] public bool BypassCtrlZoom { get; set; }
         [DataMember] public bool ReverseDirection { get; set; }
         [DataMember] public string Language { get; set; }
+        [DataMember] public string AccentColor { get; set; }
+        [DataMember] public string BackdropStyle { get; set; }
         [DataMember] public List<string> BlacklistedApps { get; set; }
 
         public AppSettings()
@@ -61,6 +63,8 @@ namespace ScrollIt.Engine
             BypassCtrlZoom = true;
             ReverseDirection = false;
             Language = "auto";
+            AccentColor = "Cyan";
+            BackdropStyle = "Mica";
             BlacklistedApps = new List<string>();
         }
     }
@@ -140,6 +144,14 @@ namespace ScrollIt.Engine
             if (string.IsNullOrEmpty(Current.Language))
             {
                 Current.Language = "auto";
+            }
+            if (string.IsNullOrEmpty(Current.AccentColor))
+            {
+                Current.AccentColor = "Cyan";
+            }
+            if (string.IsNullOrEmpty(Current.BackdropStyle))
+            {
+                Current.BackdropStyle = "Mica";
             }
             I18n.SetLanguageByCode(Current.Language);
 
