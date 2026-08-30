@@ -10,7 +10,7 @@
 
   <p>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
-      <img src="https://img.shields.io/badge/Release-v1.1.2-00d2ff?style=for-the-badge&logo=github" alt="Latest Release" />
+      <img src="https://img.shields.io/badge/Release-v1.1.1-00d2ff?style=for-the-badge&logo=github" alt="Latest Release" />
     </a>
     <a href="https://github.com/ayazkad/Scroll-it/releases">
       <img src="https://img.shields.io/badge/Downloads-Portable%20%26%20Setup-00f2fe?style=for-the-badge&logo=windows" alt="Downloads" />

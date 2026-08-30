@@ -434,9 +434,9 @@ namespace ScrollIt.Engine
                 { AppLanguage.Russian, "Установка Scroll-it" }
             }},
             { "Setup_HeaderTitle", new Dictionary<AppLanguage, string> {
-                { AppLanguage.French, "Installation de Scroll-it v1.1.2" },
-                { AppLanguage.English, "Scroll-it Setup v1.1.2" },
-                { AppLanguage.Russian, "Установка Scroll-it v1.1.2" }
+                { AppLanguage.French, "Installation de Scroll-it v1.1.1" },
+                { AppLanguage.English, "Scroll-it Setup v1.1.1" },
+                { AppLanguage.Russian, "Установка Scroll-it v1.1.1" }
             }},
             { "Setup_WelcomeHeading", new Dictionary<AppLanguage, string> {
                 { AppLanguage.French, "Bienvenue dans le programme d'installation de Scroll-it" },

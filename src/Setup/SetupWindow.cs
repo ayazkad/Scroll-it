@@ -963,7 +963,7 @@ namespace ScrollIt.Setup
                 {
                     key.SetValue("DisplayName", "Scroll-it");
                     key.SetValue("DisplayIcon", (File.Exists(targetIcon) ? targetIcon : targetExe) + ",0");
-                    key.SetValue("DisplayVersion", "1.1.2");
+                    key.SetValue("DisplayVersion", "1.1.1");
                     key.SetValue("Publisher", "Scroll-it");
                     key.SetValue("InstallLocation", installDir);
                     key.SetValue("UninstallString", "\"" + targetUninstaller + "\"");
