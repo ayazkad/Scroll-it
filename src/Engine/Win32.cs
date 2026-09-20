@@ -459,5 +459,125 @@ namespace ScrollIt.Engine
             catch { }
             return string.Empty;
         }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+        private static IntPtr _cachedTitleHwnd = IntPtr.Zero;
+        private static string _cachedWindowTitle = string.Empty;
+        private static long _cachedTitleTimestamp = 0;
+
+        public static string GetWindowTitleUnderCursor(POINT pt)
+        {
+            try
+            {
+                IntPtr hWnd = WindowFromPoint(pt);
+                if (hWnd == IntPtr.Zero)
+                {
+                    hWnd = GetForegroundWindow();
+                }
+
+                if (hWnd != IntPtr.Zero)
+                {
+                    IntPtr root = GetAncestor(hWnd, GA_ROOT);
+                    if (root == IntPtr.Zero) root = hWnd;
+
+                    long now = Environment.TickCount;
+                    if (root == _cachedTitleHwnd && (now - _cachedTitleTimestamp < 1000))
+                    {
+                        return _cachedWindowTitle;
+                    }
+
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder(512);
+                    int len = GetWindowText(root, sb, 512);
+                    string title = len > 0 ? sb.ToString() : string.Empty;
+
+                    _cachedTitleHwnd = root;
+                    _cachedWindowTitle = title;
+                    _cachedTitleTimestamp = now;
+                    return title;
+                }
+            }
+            catch { }
+            return string.Empty;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        public static bool IsTaskbarHwnd(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return false;
+            IntPtr root = GetAncestor(hWnd, GA_ROOT);
+            if (root == IntPtr.Zero) root = hWnd;
+
+            System.Text.StringBuilder sb = new System.Text.StringBuilder(64);
+            GetClassName(root, sb, 64);
+            string cls = sb.ToString();
+            return cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd";
+        }
+
+        public static bool IsBrowserTabStrip(IntPtr hWnd, POINT pt)
+        {
+            if (hWnd == IntPtr.Zero) return false;
+            IntPtr root = GetAncestor(hWnd, GA_ROOT);
+            if (root == IntPtr.Zero) root = hWnd;
+
+            // 1. Vérifier si c'est une fenêtre de navigateur par classe racine ou processus
+            System.Text.StringBuilder sbCls = new System.Text.StringBuilder(64);
+            GetClassName(root, sbCls, 64);
+            string rootCls = sbCls.ToString();
+
+            string proc = GetProcessNameUnderCursor(pt);
+            bool isBrowser = (rootCls == "Chrome_WidgetWin_1" || rootCls == "MozillaWindowClass") ||
+                             (proc == "chrome" || proc == "msedge" || proc == "brave" || 
+                              proc == "firefox" || proc == "opera" || proc == "vivaldi" || proc == "arc");
+
+            if (!isBrowser) return false;
+
+            // 2. Dans Chromium, le contenu web est TOUJOURS rendu dans Chrome_RenderWidgetHostHWND.
+            // Si le point survole directement Chrome_RenderWidgetHostHWND, c'est du contenu web, pas les onglets
+            System.Text.StringBuilder sbChild = new System.Text.StringBuilder(64);
+            GetClassName(hWnd, sbChild, 64);
+            string childCls = sbChild.ToString();
+
+            if (childCls == "Chrome_RenderWidgetHostHWND" || childCls == "MozillaContentWindowClass")
+            {
+                return false;
+            }
+
+            // 3. Vérification des coordonnées verticales par rapport au sommet de la fenêtre
+            RECT r;
+            if (GetWindowRect(root, out r))
+            {
+                int topOffset = pt.y - r.top;
+                // La zone d'onglets et de barre d'outils du navigateur s'étend de 0 à ~120-140px sous le sommet
+                // (englobant tous les facteurs de mise à l'échelle DPI 100%-200% et le mode maximisé)
+                if (topOffset >= 0 && topOffset <= 140)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool IsSpecialScrollZone(POINT pt)
+        {
+            try
+            {
+                IntPtr hWnd = WindowFromPoint(pt);
+                if (hWnd == IntPtr.Zero) hWnd = GetForegroundWindow();
+                if (hWnd == IntPtr.Zero) return false;
+
+                if (IsTaskbarHwnd(hWnd)) return true;
+                if (IsBrowserTabStrip(hWnd, pt)) return true;
+            }
+            catch { }
+            return false;
+        }
     }
 }

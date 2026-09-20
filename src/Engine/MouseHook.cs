@@ -167,31 +167,64 @@ namespace ScrollIt.Engine
 
         public static bool IsExcludedOrIncompatible(string processName)
         {
-            if (string.IsNullOrEmpty(processName)) return false;
+            return IsExcludedOrIncompatible(processName, string.Empty);
+        }
 
-            // Applications Win32 à rendu textuel par ligne fixe / consoles
-            if (processName == "notepad" || 
-                processName == "cmd" || 
-                processName == "powershell" || 
-                processName == "pwsh" || 
-                processName == "conhost" || 
-                processName == "regedit" || 
-                processName == "windowsterminal")
+        public static bool IsExcludedOrIncompatible(string processName, string windowTitle)
+        {
+            // 1. Gestionnaires de fichiers (Explorateur Windows, etc.), consoles et applications à défilement fixe par ligne
+            if (!string.IsNullOrEmpty(processName))
             {
-                return true;
+                if (processName == "explorer" ||
+                    processName == "totalcmd" ||
+                    processName == "totalcmd64" ||
+                    processName == "dopus" ||
+                    processName == "onecommander" ||
+                    processName == "files" ||
+                    processName == "notepad" || 
+                    processName == "cmd" || 
+                    processName == "powershell" || 
+                    processName == "pwsh" || 
+                    processName == "conhost" || 
+                    processName == "regedit" || 
+                    processName == "windowsterminal" ||
+                    processName == "whatsapp")
+                {
+                    return true;
+                }
             }
 
-            // Exclusions personnalisées configurées par l'utilisateur
+            // 2. Détection de WhatsApp Web (dans Chrome, Edge, Firefox, Brave, Opera, etc.)
+            // Élimine les saccades et tremblements causés par le conflit entre le défilement synthétique haute fréquence
+            // et les animations/listes virtualisées React de WhatsApp Web
+            if (!string.IsNullOrEmpty(windowTitle))
+            {
+                if (windowTitle.IndexOf("whatsapp", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            // 3. Exclusions personnalisées configurées par l'utilisateur (par nom de processus ou titre de fenêtre)
             var blacklisted = SettingsManager.Current != null ? SettingsManager.Current.BlacklistedApps : null;
             if (blacklisted != null && blacklisted.Count > 0)
             {
                 for (int i = 0; i < blacklisted.Count; i++)
                 {
                     string entry = blacklisted[i];
-                    if (!string.IsNullOrEmpty(entry) &&
-                        processName.IndexOf(entry, StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (!string.IsNullOrEmpty(entry))
                     {
-                        return true;
+                        if (!string.IsNullOrEmpty(processName) &&
+                            processName.IndexOf(entry, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return true;
+                        }
+
+                        if (!string.IsNullOrEmpty(windowTitle) &&
+                            windowTitle.IndexOf(entry, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return true;
+                        }
                     }
                 }
             }
@@ -246,9 +279,18 @@ namespace ScrollIt.Engine
                             return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
                         }
 
+                        // 4b. Pass-through immédiat pour les zones spéciales (Barre des tâches / Barre d'onglets de navigateur)
+                        // Indispensable pour les mods (ex: Windhawk pour régler le volume sur la barre des tâches ou changer d'onglet dans Chrome)
+                        if (Win32.IsSpecialScrollZone(hookStruct.pt))
+                        {
+                            ScrollPhysics.Stop();
+                            return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
+                        }
+
                         // 5. Pass-through natif direct pour applications incompatibles ou dans la liste noire
                         string targetProcess = Win32.GetProcessNameUnderCursor(hookStruct.pt);
-                        if (IsExcludedOrIncompatible(targetProcess))
+                        string targetTitle = Win32.GetWindowTitleUnderCursor(hookStruct.pt);
+                        if (IsExcludedOrIncompatible(targetProcess, targetTitle))
                         {
                             return Win32.CallNextHookEx(_hookId, nCode, wParam, lParam);
                         }

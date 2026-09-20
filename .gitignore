@@ -27,3 +27,5 @@ $RECYCLE.BIN/
 *.mkv
 *.mov
 *.avi
+*.webm
+scratch/

@@ -74,6 +74,10 @@ namespace ScrollIt.Engine
             }
         }
 
+        // Seuil au-delà duquel un nouveau coup de molette est considéré comme ciblant une nouvelle zone
+        public const int TargetSwitchThreshold = 80;
+        public const int TargetSwitchThresholdSq = TargetSwitchThreshold * TargetSwitchThreshold;
+
         public static void OnMouseMove()
         {
             if (_targetRootHwnd == IntPtr.Zero) return;
@@ -82,11 +86,30 @@ namespace ScrollIt.Engine
             Win32.POINT curPt;
             if (Win32.GetCursorPos(out curPt))
             {
+                IntPtr targetRoot;
+                lock (_syncLock)
+                {
+                    targetRoot = _targetRootHwnd;
+                }
+
+                if (targetRoot == IntPtr.Zero) return;
+
+                // 1. Arrêt instantané si la souris entre dans une zone spéciale (Barre des tâches ou Onglets)
+                if (Win32.IsSpecialScrollZone(curPt))
+                {
+                    lock (_syncLock)
+                    {
+                        ResetPhysicsState();
+                    }
+                    return;
+                }
+
+                // 2. Arrêt instantané si la fenêtre sous le curseur quitte l'application cible
                 IntPtr curHwnd = Win32.WindowFromPoint(curPt);
                 IntPtr curRoot = Win32.GetAncestor(curHwnd, Win32.GA_ROOT);
                 if (curRoot == IntPtr.Zero) curRoot = curHwnd;
 
-                if (curRoot != _targetRootHwnd)
+                if (curRoot != targetRoot)
                 {
                     lock (_syncLock)
                     {
@@ -99,6 +122,14 @@ namespace ScrollIt.Engine
         public static void OnWheel(int rawDelta, bool isHorizontal, Win32.POINT pt)
         {
             if (!SettingsManager.Current.Enabled) return;
+
+            // Protection absolue : si le coup de molette a lieu dans la barre des tâches ou les onglets de navigateur,
+            // ne JAMAIS déclencher la physique !
+            if (Win32.IsSpecialScrollZone(pt))
+            {
+                Stop();
+                return;
+            }
 
             long now = _stopwatch.ElapsedMilliseconds;
             double stepBase = SettingsManager.Current.StepSize;
@@ -116,13 +147,17 @@ namespace ScrollIt.Engine
 
             lock (_syncLock)
             {
-                long elapsedSinceLastWheel = now - _lastWheelTimestampY;
+                long elapsedSinceLastWheel = isHorizontal ? (now - _lastWheelTimestampX) : (now - _lastWheelTimestampY);
 
-                // Si on change de fenêtre racine OU si plus de 150 ms se sont écoulées (nouveau geste)
-                if (rootHwnd != _targetRootHwnd || elapsedSinceLastWheel > 150 || (_velocityY == 0.0 && _velocityX == 0.0))
+                int dx = pt.x - _latchedPoint.x;
+                int dy = pt.y - _latchedPoint.y;
+                bool targetMoved = (_latchedHwnd != IntPtr.Zero && (targetHwnd != _latchedHwnd || (dx * dx + dy * dy) > TargetSwitchThresholdSq));
+
+                // Si on change de cible / fenêtre OU si la souris s'est déplacée OU si plus de 150 ms se sont écoulées (nouveau geste)
+                if (targetMoved || rootHwnd != _targetRootHwnd || elapsedSinceLastWheel > 150 || (_velocityY == 0.0 && _velocityX == 0.0))
                 {
-                    // Si changement d'application/fenêtre, on remet à zéro l'inertie précédente
-                    if (rootHwnd != _targetRootHwnd)
+                    // Si changement d'application/fenêtre/cible, on remet à zéro l'inertie précédente
+                    if (targetMoved || rootHwnd != _targetRootHwnd)
                     {
                         _velocityY = 0.0;
                         _subPixelY = 0.0;
@@ -272,22 +307,53 @@ namespace ScrollIt.Engine
                 // Vérification de changement d'application / fenêtre de premier plan
                 lock (_syncLock)
                 {
-                    if (_initialForegroundRoot != IntPtr.Zero)
+                    if (_initialForegroundRoot != IntPtr.Zero && _initialForegroundRoot == _targetRootHwnd)
                     {
                         IntPtr curFg = Win32.GetForegroundWindow();
-                        IntPtr curFgRoot = Win32.GetAncestor(curFg, Win32.GA_ROOT);
-                        if (curFgRoot == IntPtr.Zero) curFgRoot = curFg;
-
-                        if (curFgRoot != _initialForegroundRoot)
+                        if (curFg != IntPtr.Zero)
                         {
-                            ResetPhysicsState();
-                            continue;
+                            IntPtr curFgRoot = Win32.GetAncestor(curFg, Win32.GA_ROOT);
+                            if (curFgRoot == IntPtr.Zero) curFgRoot = curFg;
+
+                            if (curFgRoot != _initialForegroundRoot)
+                            {
+                                ResetPhysicsState();
+                                continue;
+                            }
                         }
                     }
 
                     if (_latchedHwnd != IntPtr.Zero && !Win32.IsWindow(_latchedHwnd))
                     {
                         ResetPhysicsState();
+                        continue;
+                    }
+                }
+
+                // Arrêt instantané si le curseur quitte la zone de défilement (comportement identique au Touchpad)
+                Win32.POINT livePt;
+                if (Win32.GetCursorPos(out livePt))
+                {
+                    if (Win32.IsSpecialScrollZone(livePt))
+                    {
+                        lock (_syncLock)
+                        {
+                            ResetPhysicsState();
+                        }
+                        continue;
+                    }
+
+                    // Arrêt si la souris quitte l'application cible vers une autre fenêtre
+                    IntPtr liveHwnd = Win32.WindowFromPoint(livePt);
+                    IntPtr liveRoot = Win32.GetAncestor(liveHwnd, Win32.GA_ROOT);
+                    if (liveRoot == IntPtr.Zero) liveRoot = liveHwnd;
+
+                    if (liveRoot != _targetRootHwnd)
+                    {
+                        lock (_syncLock)
+                        {
+                            ResetPhysicsState();
+                        }
                         continue;
                     }
                 }
@@ -412,14 +478,12 @@ namespace ScrollIt.Engine
                 return;
             }
 
-            if (hwnd != IntPtr.Zero)
+            // 1. Envoi prioritaire ciblé via PostMessage :
+            // Les coordonnées initiales du coup de molette (pt.x, pt.y) sont gravées dans lParam.
+            // Cela garantit que tous les ticks d'inertie sont appliqués strictement au conteneur initial (_latchedPoint),
+            // sans jamais déborder sur la page globale si le curseur physique se déplace.
+            if (hwnd != IntPtr.Zero && Win32.IsWindow(hwnd))
             {
-                if (!Win32.IsWindow(hwnd))
-                {
-                    Stop();
-                    return;
-                }
-
                 uint msg = isHorizontal ? (uint)Win32.WM_MOUSEHWHEEL : (uint)Win32.WM_MOUSEWHEEL;
                 IntPtr wParam = Win32.MakeWParam((short)delta, 0);
                 IntPtr lParam = Win32.MakeLParam(pt.x, pt.y);
@@ -430,7 +494,7 @@ namespace ScrollIt.Engine
                 }
             }
 
-            // Fallback SendInput
+            // 2. Repli SendInput si PostMessage n'est pas supporté (ex: UWP DirectManipulation)
             Win32.INPUT[] inputs = new Win32.INPUT[1];
             inputs[0].type = Win32.INPUT_MOUSE;
             inputs[0].mi.dx = 0;
